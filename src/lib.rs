@@ -21,7 +21,7 @@
 //!
 //! let (nx, ny) = (6, 4);
 //! let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-//! let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+//! let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
 //! for (i, v) in data.iter_mut().enumerate() {
 //!     *v = i as f64;
 //! }
@@ -47,7 +47,7 @@ use std::sync::Arc;
 /// that defines how to iterate over the specified axis in a array.
 /// The fft/dct transform is applied iteratively for each vector-lane.
 macro_rules! create_transform {
-    ($i: ident, $a: ty, $b: ty, $h: ty) => {
+    ($i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
         pub fn $i<T, D>(
             input: &mut ArrayViewMut<$a, D>,
             output: &mut ArrayViewMut<$b, D>,
@@ -62,7 +62,7 @@ macro_rules! create_transform {
                 Zip::from(input.rows())
                     .and(output.rows_mut())
                     .for_each(|x, mut y| {
-                        handler.process(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
+                        handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
                     });
             } else {
                 let mut outvec = Array1::zeros(output.shape()[axis]);
@@ -71,7 +71,7 @@ macro_rules! create_transform {
                 Zip::from(input.rows())
                     .and(output.rows_mut())
                     .for_each(|x, mut y| {
-                        handler.process(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                        handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
                         y.assign(&outvec);
                     });
                 input.swap_axes(outer_axis, axis);
@@ -93,7 +93,7 @@ macro_rules! create_transform {
 ///
 /// let (nx, ny) = (6, 4);
 /// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-/// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+/// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
 /// for (i, v) in data.iter_mut().enumerate() {
 ///     *v = i as f64;
 /// }
@@ -106,27 +106,34 @@ macro_rules! create_transform {
 /// );
 /// ```
 ///
-/// The accompanying function is [`ndfft`].
+/// The accompanying function for the forward transform is [`ndfft`].
+/// The accompanying function for the inverse transform is [`ndifft`].
 pub struct FftHandler<T: FftNum> {
     pub n: usize,
+    pub m: usize,
     pub plan_fwd: Arc<dyn rustfft::Fft<T>>,
+    pub plan_bwd: Arc<dyn rustfft::Fft<T>>,
     pub buffer: Vec<Complex<T>>,
 }
 
 impl<T: FftNum> FftHandler<T> {
     pub fn new(n: usize) -> Self {
         let mut planner = FftPlanner::<T>::new();
-        let fft = planner.plan_fft_forward(n);
+        let fwd = planner.plan_fft_forward(n);
+        let bwd = planner.plan_fft_inverse(n);
         let buffer = vec![Complex::zero(); n];
         FftHandler::<T> {
             n,
-            plan_fwd: Arc::clone(&fft),
+            m: n / 2 + 1,
+            plan_fwd: Arc::clone(&fwd),
+            plan_bwd: Arc::clone(&bwd),
             buffer,
         }
     }
 
-    pub fn process(&mut self, data: &[T], out: &mut [Complex<T>]) {
-        self.assert_size(data.len());
+    pub fn fft_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
+        self.assert_size(self.n, data.len());
+        self.assert_size(self.m, out.len());
         for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
             *b = Complex::new(*d, T::from_f64(0.0).unwrap());
         }
@@ -136,17 +143,36 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    fn assert_size(&self, size: usize) {
+    pub fn ifft_lane(&mut self, data: &[Complex<T>], out: &mut [T]) {
+        self.assert_size(self.m, data.len());
+        self.assert_size(self.n, out.len());
+        let m = data.len();
+        for (b, d) in self.buffer[..m].iter_mut().zip(data.iter()) {
+            *b = *d;
+        }
+        for (b, d) in self.buffer[m..].iter_mut().zip(data[1..].iter()) {
+            b.re = d.re;
+            b.im = -d.im;
+        }
+        self.plan_bwd.process(&mut self.buffer);
+        let n64 = T::from_f64(1. / self.n as f64).unwrap();
+        for (b, d) in self.buffer.iter().zip(out.iter_mut()) {
+            *d = b.re * n64;
+        }
+    }
+
+    fn assert_size(&self, n: usize, size: usize) {
         assert!(
-            self.n == size,
+            n == size,
             "Size mismatch in fft, got {} expected {}",
             size,
-            self.n
+            n
         );
     }
 }
 
-create_transform!(ndfft, T, Complex<T>, FftHandler<T>);
+create_transform!(ndfft, T, Complex<T>, FftHandler<T>, fft_lane);
+create_transform!(ndifft, Complex<T>, T, FftHandler<T>, ifft_lane);
 
 /// # *n*-dimensional real-to-real Cosine Transform (DCT-I).
 ///
@@ -193,19 +219,16 @@ impl<T: FftNum> Dct1Handler<T> {
         }
     }
 
-    /// # Perform 1-dimensional DCT-I on a vector.
-    ///
     /// # Algorithm:
     /// 1. Reorder:
-    /// [a,b,c,d] -> [a,b,c,d,c,b]
+    /// (a,b,c,d) -> (a,b,c,d,c,b)
     ///
     /// 2. Compute FFT
-    /// -> [a*,b*,c*,d*,c*,b*]
+    /// -> (a*,b*,c*,d*,c*,b*)
     ///
     /// 3. Extract
-    /// [a*,b*,c*,d*]
-    /// ```
-    pub fn process(&mut self, data: &[T], out: &mut [T]) {
+    /// (a*,b*,c*,d*)
+    pub fn dct1_lane(&mut self, data: &[T], out: &mut [T]) {
         self.assert_size(data.len());
         let n = self.buffer.len();
         self.buffer[0] = Complex::new(data[0], T::from_f64(0.0).unwrap());
@@ -230,142 +253,37 @@ impl<T: FftNum> Dct1Handler<T> {
     }
 }
 
-create_transform!(nddct1, T, T, Dct1Handler<T>);
+create_transform!(nddct1, T, T, Dct1Handler<T>, dct1_lane);
 
-// pub fn ndfft<T, D>(
-//     input: &mut ArrayViewMut<T, D>,
-//     output: &mut ArrayViewMut<Complex<T>, D>,
-//     fft_handler: &mut FftHandler<T>,
-//     axis: usize,
-// ) where
-//     T: FftNum,
-//     D: Dimension + RemoveAxis,
-// {
-//     let outer_axis = input.ndim() - 1;
-//     if axis == outer_axis {
-//         Zip::from(input.rows())
-//             .and(output.rows_mut())
-//             .for_each(|x, mut y| {
-//                 fft_handler.process(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
-//             });
-//     } else {
-//         let mut outvec = Array1::zeros(output.shape()[axis]);
-//         input.swap_axes(outer_axis, axis);
-//         output.swap_axes(outer_axis, axis);
-//         Zip::from(input.rows())
-//             .and(output.rows_mut())
-//             .for_each(|x, mut y| {
-//                 fft_handler.process(&x.to_vec(), outvec.as_slice_mut().unwrap());
-//                 y.assign(&outvec);
-//             });
-//         input.swap_axes(outer_axis, axis);
-//         output.swap_axes(outer_axis, axis);
-//     }
-// }
+/// Tests
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ndarray::{Array, Dim, Ix};
 
-// pub struct MyArray<T, D>(pub Array<T, D>);
-//
-// impl<T, D> MyArray<T, D>
-// where
-//     T: FftNum,
-//     D: Dimension + RemoveAxis,
-// {
-//     pub fn fft(&self, output: &mut ArrayViewMut<Complex<T>, D>, fft_handler: &mut Rustfft<T>) {
-//         let axis = self.outer_axis();
-//         Zip::from(self.0.rows())
-//             .and(output.rows_mut())
-//             .for_each(|x, mut y| {
-//                 println!("{:?} {:?}", x, y);
-//                 fft_handler.fft(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
-//                 println!("{:?} {:?}", x, y);
-//                 println!("");
-//             });
-//     }
-//
-//     fn outer_axis(&self) -> usize {
-//         self.0.ndim() - 1
-//     }
-// }
+    #[test]
+    /// Successive forward and inverse transform
+    fn test_fft() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+        let expected = data.clone();
+        ndfft(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
+        ndifft(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 1);
 
-// pub fn rustfft1d<T: FftNum + std::ops::MulAssign>(rfft: &Rustfft<T>, data: &mut [Complex<T>]) {
-//     rfft.fft.process(data);
-// }
-//
-// pub fn rustfft1d_r2c<T>(rfft: &mut Rustfft<T>, data: &mut [T])
-// where
-//     T: FftNum,
-//     f64: Into<T>,
-// {
-//     for (b, d) in rfft.buffer.iter_mut().zip(data.iter()) {
-//         *b = Complex::new(*d, T::from_f64(0.0).unwrap());
-//     }
-//     rfft.fft.process(&mut rfft.buffer);
-// }
-//
-// pub struct Rustfft<T: FftNum> {
-//     pub n: usize,
-//     pub fft: Arc<dyn rustfft::Fft<T>>,
-//     pub fft2n: Arc<dyn rustfft::Fft<T>>,
-//     pub buffer: Vec<Complex<T>>,
-//     pub buffer2n: Vec<Complex<T>>,
-// }
-//
-// impl<T: FftNum> Rustfft<T> {
-//     pub fn new(n: usize) -> Self {
-//         let mut planner = FftPlanner::<T>::new();
-//         let fft = planner.plan_fft_forward(n);
-//         let buffer = vec![Complex::zero(); n];
-//         let n2 = 2 * (n - 1);
-//         let fft2n = planner.plan_fft_forward(n2);
-//         let buffer2n = vec![Complex::zero(); n2];
-//         Rustfft::<T> {
-//             n,
-//             fft: Arc::clone(&fft),
-//             fft2n: Arc::clone(&fft2n),
-//             buffer,
-//             buffer2n,
-//         }
-//     }
-// }
-//
-// impl<T> Rustfft<T>
-// where
-//     T: FftNum,
-//     f64: Into<T>,
-// {
-//     pub fn r2c(&mut self, data: &[T], out: &mut [Complex<T>]) {
-//         self._r2c(data);
-//         for (b, d) in self.buffer[0..self.n / 2 + 1].iter().zip(out.iter_mut()) {
-//             *d = *b;
-//         }
-//     }
-//
-//     pub fn _r2c(&mut self, data: &[T]) {
-//         for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
-//             *b = Complex::new(*d, T::from_f64(0.0).unwrap());
-//         }
-//         self.fft.process(&mut self.buffer);
-//     }
-//
-//     /// Perform type 1 discrete cosine transform (DCT-I) with rustfft
-//     ///
-//     /// # Algorithm:
-//     /// ```
-//     /// [a,b,c,d] -> [a,b,c,d,c,b]
-//     /// FFT on 2*(n-1) array -> [a*,b*,c*,d*,c*,b*]
-//     /// Extract [a*,b*,c*,d*]
-//     /// ```
-//     pub fn dct(&mut self, data: &mut [T], out: &mut [T]) {
-//         let n = self.buffer2n.len();
-//         self.buffer2n[0] = Complex::new(data[0], T::from_f64(0.0).unwrap());
-//         for (i, d) in data[1..].iter().enumerate() {
-//             self.buffer2n[i + 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
-//             self.buffer2n[n - i - 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
-//         }
-//         self.fft2n.process(&mut self.buffer2n);
-//         out[0] = self.buffer2n[0].re;
-//         for (i, d) in out[1..].iter_mut().enumerate() {
-//             *d = self.buffer2n[i + 1].re;
-//         }
-//     }
-// }
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!(
+                    "Large difference of values, got {} expected {}.",
+                    b, a
+                )
+            }
+        }
+    }
+}
