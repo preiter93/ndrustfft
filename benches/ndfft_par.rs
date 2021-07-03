@@ -1,11 +1,11 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use ndarray::{Array, Dim, Ix};
-use ndrustfft::{nddct1, Dct1Handler};
-use ndrustfft::{ndfft, Complex, FftHandler};
+use ndrustfft::{nddct1_par, Dct1Handler};
+use ndrustfft::{ndfft_par, Complex, FftHandler};
 const SIZES: [usize; 3] = [128, 264, 512];
 
 pub fn bench_fft2d(c: &mut Criterion) {
-    let mut group = c.benchmark_group("fft2d");
+    let mut group = c.benchmark_group("fft2d_par");
     for n in SIZES.iter() {
         let name = format!("Size: {}", *n);
         let m = *n / 2 + 1;
@@ -16,14 +16,14 @@ pub fn bench_fft2d(c: &mut Criterion) {
         }
         let mut handler: FftHandler<f64> = FftHandler::new(*n);
         group.bench_function(&name, |b| {
-            b.iter(|| ndfft(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0))
+            b.iter(|| ndfft_par(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0))
         });
     }
     group.finish();
 }
 
 pub fn bench_dct2d(c: &mut Criterion) {
-    let mut group = c.benchmark_group("dct2d");
+    let mut group = c.benchmark_group("dct2d_par");
     for n in SIZES.iter() {
         let name = format!("Size: {}", *n);
         let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((*n, *n));
@@ -33,7 +33,7 @@ pub fn bench_dct2d(c: &mut Criterion) {
         }
         let mut handler: Dct1Handler<f64> = Dct1Handler::new(*n);
         group.bench_function(&name, |b| {
-            b.iter(|| nddct1(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0))
+            b.iter(|| nddct1_par(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0))
         });
     }
     group.finish();

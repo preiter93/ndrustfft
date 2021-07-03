@@ -10,11 +10,15 @@ path = "src/lib.rs"
 doctest = false
 
 [dependencies]
-ndarray = "0.15.0"
+ndarray = { version = "0.15.0", features = ["rayon"] }
 rustfft = "6.0.1"
 num-traits = "0.2.12"
 criterion = { version = "0.3.4", features = ["html_reports"] }
 
 [[bench]]
 name = "ndfft"
+harness = false
+
+[[bench]]
+name = "ndfft_par"
 harness = false
