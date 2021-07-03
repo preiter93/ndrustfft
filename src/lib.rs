@@ -13,6 +13,10 @@
 //! The transform along the outermost axis are the cheapest, while transforms along
 //! other axis' need to copy data temporary.
 //!
+//! ## Parallel
+//! The library implements ships all transforms together with a parallel implementation
+//! which leverages the internal parallelization of ndarray.
+//!
 //! ## Example
 //! 2-Dimensional real-to-complex fft along first axis
 //! ```
@@ -81,6 +85,43 @@ macro_rules! create_transform {
     };
 }
 
+/// Implement parallel version of create transform
+macro_rules! create_transform_par {
+    ($i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
+        pub fn $i<T, D>(
+            input: &mut ArrayViewMut<$a, D>,
+            output: &mut ArrayViewMut<$b, D>,
+            handler: &mut $h,
+            axis: usize,
+        ) where
+            T: FftNum,
+            D: Dimension + RemoveAxis,
+        {
+            let outer_axis = input.ndim() - 1;
+            if axis == outer_axis {
+                Zip::from(input.rows())
+                    .and(output.rows_mut())
+                    .par_for_each(|x, mut y| {
+                        handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
+                    });
+            } else {
+                let n = output.shape()[axis];
+                input.swap_axes(outer_axis, axis);
+                output.swap_axes(outer_axis, axis);
+                Zip::from(input.rows())
+                    .and(output.rows_mut())
+                    .par_for_each(|x, mut y| {
+                        let mut outvec = Array1::zeros(n);
+                        handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                        y.assign(&outvec);
+                    });
+                input.swap_axes(outer_axis, axis);
+                output.swap_axes(outer_axis, axis);
+            }
+        }
+    };
+}
+
 /// # *n*-dimensional real-to-complex Fourier Transform.
 ///
 /// Performs best on sizes which are multiples of 2 or 3.
@@ -106,8 +147,8 @@ macro_rules! create_transform {
 /// );
 /// ```
 ///
-/// The accompanying function for the forward transform is [`ndfft`].
-/// The accompanying function for the inverse transform is [`ndifft`].
+/// The accompanying function for the forward transform is [`ndfft`,`ndfft_par`].
+/// The accompanying function for the inverse transform is [`ndifft`,`ndifft_par`].
 pub struct FftHandler<T: FftNum> {
     pub n: usize,
     pub m: usize,
@@ -131,7 +172,7 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    pub fn fft_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
+    fn fft_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
         self.assert_size(self.n, data.len());
         self.assert_size(self.m, out.len());
         for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
@@ -143,7 +184,20 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    pub fn ifft_lane(&mut self, data: &[Complex<T>], out: &mut [T]) {
+    fn fft_lane_par(&self, data: &[T], out: &mut [Complex<T>]) {
+        self.assert_size(self.n, data.len());
+        self.assert_size(self.m, out.len());
+        let mut buffer = vec![Complex::zero(); self.n];
+        for (b, d) in buffer.iter_mut().zip(data.iter()) {
+            *b = Complex::new(*d, T::from_f64(0.0).unwrap());
+        }
+        self.plan_fwd.process(&mut buffer);
+        for (b, d) in buffer[0..self.n / 2 + 1].iter().zip(out.iter_mut()) {
+            *d = *b;
+        }
+    }
+
+    fn ifft_lane(&mut self, data: &[Complex<T>], out: &mut [T]) {
         self.assert_size(self.m, data.len());
         self.assert_size(self.n, out.len());
         let m = data.len();
@@ -161,6 +215,24 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
+    fn ifft_lane_par(&self, data: &[Complex<T>], out: &mut [T]) {
+        self.assert_size(self.m, data.len());
+        let m = data.len();
+        let mut buffer = vec![Complex::zero(); self.n];
+        for (b, d) in buffer[..m].iter_mut().zip(data.iter()) {
+            *b = *d;
+        }
+        for (b, d) in buffer[m..].iter_mut().zip(data[1..].iter()) {
+            b.re = d.re;
+            b.im = -d.im;
+        }
+        self.plan_bwd.process(&mut buffer);
+        let n64 = T::from_f64(1. / self.n as f64).unwrap();
+        for (b, d) in buffer.iter().zip(out.iter_mut()) {
+            *d = b.re * n64;
+        }
+    }
+
     fn assert_size(&self, n: usize, size: usize) {
         assert!(
             n == size,
@@ -173,6 +245,8 @@ impl<T: FftNum> FftHandler<T> {
 
 create_transform!(ndfft, T, Complex<T>, FftHandler<T>, fft_lane);
 create_transform!(ndifft, Complex<T>, T, FftHandler<T>, ifft_lane);
+create_transform_par!(ndfft_par, T, Complex<T>, FftHandler<T>, fft_lane_par);
+create_transform_par!(ndifft_par, Complex<T>, T, FftHandler<T>, ifft_lane_par);
 
 /// # *n*-dimensional real-to-real Cosine Transform (DCT-I).
 ///
@@ -228,7 +302,7 @@ impl<T: FftNum> Dct1Handler<T> {
     ///
     /// 3. Extract
     /// (a*,b*,c*,d*)
-    pub fn dct1_lane(&mut self, data: &[T], out: &mut [T]) {
+    fn dct1_lane(&mut self, data: &[T], out: &mut [T]) {
         self.assert_size(data.len());
         let n = self.buffer.len();
         self.buffer[0] = Complex::new(data[0], T::from_f64(0.0).unwrap());
@@ -243,6 +317,22 @@ impl<T: FftNum> Dct1Handler<T> {
         }
     }
 
+    fn dct1_lane_par(&self, data: &[T], out: &mut [T]) {
+        self.assert_size(data.len());
+        let n = self.n;
+        let mut buffer = vec![Complex::zero(); 2 * (self.n - 1)];
+        buffer[0] = Complex::new(data[0], T::from_f64(0.0).unwrap());
+        for (i, d) in data[1..].iter().enumerate() {
+            buffer[i + 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
+            buffer[n - i - 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
+        }
+        self.plan.process(&mut buffer);
+        out[0] = buffer[0].re;
+        for (i, d) in out[1..].iter_mut().enumerate() {
+            *d = buffer[i + 1].re;
+        }
+    }
+
     fn assert_size(&self, size: usize) {
         assert!(
             self.n == size,
@@ -254,6 +344,7 @@ impl<T: FftNum> Dct1Handler<T> {
 }
 
 create_transform!(nddct1, T, T, Dct1Handler<T>, dct1_lane);
+create_transform!(nddct1_par, T, T, Dct1Handler<T>, dct1_lane_par);
 
 /// Tests
 #[cfg(test)]
@@ -279,10 +370,7 @@ mod test {
         let dif = 1e-6;
         for (a, b) in expected.iter().zip(data.iter()) {
             if (a - b).abs() > dif {
-                panic!(
-                    "Large difference of values, got {} expected {}.",
-                    b, a
-                )
+                panic!("Large difference of values, got {} expected {}.", b, a)
             }
         }
     }
