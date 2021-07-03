@@ -1,0 +1,20 @@
+[package]
+name = "ndrustfft"
+version = "0.1.0"
+authors = ["preiter"]
+edition = "2018"
+
+[lib]
+name = "ndrustfft"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+ndarray = "0.15.0"
+rustfft = "6.0.1"
+num-traits = "0.2.12"
+criterion = { version = "0.3.4", features = ["html_reports"] }
+
+[[bench]]
+name = "ndfft"
+harness = false
