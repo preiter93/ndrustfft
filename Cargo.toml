@@ -1,19 +1,24 @@
 [package]
 name = "ndrustfft"
 version = "0.1.0"
-authors = ["preiter"]
+authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
+description = "N-dimensional real-to-complex FFT and real-to-real DCT for Rust"
+repository = "https://github.com/preiter93/ndrustfft"
+keywords = ["fft", "dft", "dct", "rustfft", "ndarray"]
 readme = "README.md"
+license = "MIT"
 
 [lib]
 name = "ndrustfft"
 path = "src/lib.rs"
-#doctest = false
 
 [dependencies]
 ndarray = { version = "0.15.0", features = ["rayon"] }
 rustfft = "6.0.1"
 num-traits = "0.2.12"
+
+[dev-dependencies]
 criterion = { version = "0.3.4", features = ["html_reports"] }
 
 [[bench]]
