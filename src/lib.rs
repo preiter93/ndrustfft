@@ -316,7 +316,7 @@ create_transform!(
 create_transform_par!(
     /// Real-to-complex Fourier Transform (parallel).
     ///
-    /// Further infos: see [`ndirfft`]
+    /// Further infos: see [`ndrfft`]
     ndrfft_par, T, Complex<T>, FftHandler<T>, rfft_lane_par);
 create_transform_par!(
     /// Complex-to-real inverse Fourier Transform (parallel).
