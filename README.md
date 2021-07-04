@@ -1,7 +1,7 @@
 # ndrustfft
+<img align="right" src="https://rustacean.net/assets/cuddlyferris.png" width="70">
 
 ## ndrustfft: *n*-dimensional real-to-complex FFT and real-to-real DCT
-<img align="right" src="https://rustacean.net/assets/cuddlyferris.png" width="80">
 
 This library is a wrapper for RustFFT that enables performing FFTs of real-valued data
 and DCT's on *n*-dimensional arrays (ndarray).
