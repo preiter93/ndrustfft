@@ -3,11 +3,12 @@ name = "ndrustfft"
 version = "0.1.0"
 authors = ["preiter"]
 edition = "2018"
+readme = "README.md"
 
 [lib]
 name = "ndrustfft"
 path = "src/lib.rs"
-doctest = false
+#doctest = false
 
 [dependencies]
 ndarray = { version = "0.15.0", features = ["rayon"] }
