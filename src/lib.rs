@@ -4,7 +4,7 @@
 //! and DCT's on *n*-dimensional arrays (ndarray).
 //!
 //! ndrustfft provides Handler structs for FFT's and DCTs, which must be provided
-//! to the respective ndrfft, nddct function alongside with ArrayViews.
+//! to the respective ndrfft, nddct function alongside with Arrays.
 //! The Handlers contain the transform plans and buffers which reduce allocation cost.
 //! The Handlers implement a process function, which is a wrapper around Rustfft's
 //! process function with additional steps, i.e. to provide a real-to complex fft,
@@ -41,7 +41,8 @@
 #![warn(missing_doc_code_examples)]
 extern crate ndarray;
 extern crate rustfft;
-use ndarray::{Array1, ArrayViewMut, Dimension, RemoveAxis, Zip};
+use ndarray::{Array1, ArrayBase, Dimension, RemoveAxis, Zip};
+use ndarray::{Data, DataMut};
 pub use rustfft::num_complex::Complex;
 pub use rustfft::num_traits::Zero;
 pub use rustfft::FftNum;
@@ -57,13 +58,15 @@ macro_rules! create_transform {
         $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
     ) => {
         $(#[$meta])*
-        pub fn $i<T, D>(
-            input: &mut ArrayViewMut<$a, D>,
-            output: &mut ArrayViewMut<$b, D>,
+        pub fn $i<R, S, T, D>(
+            input: &mut ArrayBase<R, D>,
+            output: &mut ArrayBase<S, D>,
             handler: &mut $h,
             axis: usize,
         ) where
             T: FftNum,
+            R: Data<Elem = $a>,
+            S: Data<Elem = $b> + DataMut,
             D: Dimension + RemoveAxis,
         {
             let outer_axis = input.ndim() - 1;
@@ -94,13 +97,15 @@ macro_rules! create_transform {
 macro_rules! create_transform_par {
     ($(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
         $(#[$meta])*
-        pub fn $i<T, D>(
-            input: &mut ArrayViewMut<$a, D>,
-            output: &mut ArrayViewMut<$b, D>,
+        pub fn $i<R, S, T, D>(
+            input: &mut ArrayBase<R, D>,
+            output: &mut ArrayBase<S, D>,
             handler: &mut $h,
             axis: usize,
         ) where
             T: FftNum,
+            R: Data<Elem = $a>,
+            S: Data<Elem = $b> + DataMut,
             D: Dimension + RemoveAxis,
         {
             let outer_axis = input.ndim() - 1;
@@ -289,6 +294,7 @@ create_transform!(
     ///     &mut handler,
     ///     0,
     /// );
+    /// ```
     ndrfft, T, Complex<T>, FftHandler<T>, rfft_lane);
 
 create_transform!(
@@ -311,6 +317,7 @@ create_transform!(
     ///     &mut handler,
     ///     0,
     /// );
+    /// ```
     ndirfft, Complex<T>, T, FftHandler<T>, irfft_lane);
 
 create_transform_par!(
