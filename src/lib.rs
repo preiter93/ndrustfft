@@ -296,7 +296,7 @@ create_transform!(
     /// # Example
     /// ```
     /// use ndarray::{Array, Dim, Ix};
-    /// use ndrustfft::{ndrfft, Complex, FftHandler};
+    /// use ndrustfft::{ndirfft, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
     /// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
