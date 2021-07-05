@@ -1,6 +1,6 @@
 [package]
 name = "ndrustfft"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
 description = "N-dimensional real-to-complex FFT and real-to-real DCT for Rust"
@@ -22,9 +22,9 @@ num-traits = "0.2.12"
 criterion = { version = "0.3.4", features = ["html_reports"] }
 
 [[bench]]
-name = "ndfft"
+name = "ndrustfft"
 harness = false
 
 [[bench]]
-name = "ndfft_par"
+name = "ndrustfft_par"
 harness = false
