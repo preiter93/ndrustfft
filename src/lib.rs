@@ -1,7 +1,7 @@
-//! # ndrustfft: *n*-dimensional real-to-complex FFT and real-to-real DCT
+//! # ndrustfft: *n*-dimensional complex-to-complex FFT, real-to-complex FFT and real-to-real DCT
 //!
-//! This library is a wrapper for RustFFT that enables performing FFTs of real-valued data
-//! and DCT's on *n*-dimensional arrays (ndarray).
+//! This library is a wrapper for RustFFT that enables performing FFTs of complex-, real-valued
+//! data and DCT's on *n*-dimensional arrays (ndarray).
 //!
 //! ndrustfft provides Handler structs for FFT's and DCTs, which must be provided
 //! to the respective ndrfft, nddct function alongside with Arrays.
@@ -203,6 +203,28 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
+    fn fft_lane(&self, data: &[Complex<T>], out: &mut [Complex<T>]) {
+        self.assert_size(self.n, data.len());
+        self.assert_size(self.n, out.len());
+        for (b, d) in out.iter_mut().zip(data.iter()) {
+            *b = *d;
+        }
+        self.plan_fwd.process(out);
+    }
+
+    fn ifft_lane(&self, data: &[Complex<T>], out: &mut [Complex<T>]) {
+        self.assert_size(self.n, data.len());
+        self.assert_size(self.n, out.len());
+        for (b, d) in out.iter_mut().zip(data.iter()) {
+            *b = *d;
+        }
+        self.plan_bwd.process(out);
+        let n64 = T::from_f64(1. / self.n as f64).unwrap();
+        for b in out.iter_mut() {
+            *b = *b * n64;
+        }
+    }
+
     fn rfft_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
         self.assert_size(self.n, data.len());
         self.assert_size(self.m, out.len());
@@ -275,6 +297,55 @@ impl<T: FftNum> FftHandler<T> {
 }
 
 create_transform!(
+    /// Complex-to-complex Fourier Transform (serial).
+    /// # Example
+    /// ```
+    /// use ndarray::{Array, Dim, Ix};
+    /// use ndrustfft::{ndfft, Complex, FftHandler};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     v.re = i as f64;
+    ///     v.im = -1.0*i as f64;
+    /// }
+    /// let mut handler: FftHandler<f64> = FftHandler::new(ny);
+    /// ndfft(&mut data, &mut vhat, &mut handler, 1);
+    /// ```
+    ndfft,
+    Complex<T>,
+    Complex<T>,
+    FftHandler<T>,
+    fft_lane
+);
+
+create_transform!(
+    /// Complex-to-complex Inverse Fourier Transform (serial).
+    /// # Example
+    /// ```
+    /// use ndarray::{Array, Dim, Ix};
+    /// use ndrustfft::{ndfft, ndifft, Complex, FftHandler};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     v.re = i as f64;
+    ///     v.im = -1.0*i as f64;
+    /// }
+    /// let mut handler: FftHandler<f64> = FftHandler::new(ny);
+    /// ndfft(&mut data, &mut vhat, &mut handler, 1);
+    /// ndifft(&mut vhat, &mut data, &mut handler, 1);
+    /// ```
+    ndifft,
+    Complex<T>,
+    Complex<T>,
+    FftHandler<T>,
+    ifft_lane
+);
+
+create_transform!(
     /// Real-to-complex Fourier Transform (serial).
     /// # Example
     /// ```
@@ -295,7 +366,12 @@ create_transform!(
     ///     0,
     /// );
     /// ```
-    ndrfft, T, Complex<T>, FftHandler<T>, rfft_lane);
+    ndrfft,
+    T,
+    Complex<T>,
+    FftHandler<T>,
+    rfft_lane
+);
 
 create_transform!(
     /// Complex-to-real inverse Fourier Transform (serial).
@@ -318,18 +394,56 @@ create_transform!(
     ///     0,
     /// );
     /// ```
-    ndirfft, Complex<T>, T, FftHandler<T>, irfft_lane);
+    ndirfft,
+    Complex<T>,
+    T,
+    FftHandler<T>,
+    irfft_lane
+);
+
+create_transform_par!(
+    /// Complex-to-complex Fourier Transform (parallel).
+    ///
+    /// Further infos: see [`ndfft`]
+    ndfft_par,
+    Complex<T>,
+    Complex<T>,
+    FftHandler<T>,
+    fft_lane
+);
+
+create_transform_par!(
+    /// Complex-to-complex inverse Fourier Transform (parallel).
+    ///
+    /// Further infos: see [`ndifft`]
+    ndifft_par,
+    Complex<T>,
+    Complex<T>,
+    FftHandler<T>,
+    ifft_lane
+);
 
 create_transform_par!(
     /// Real-to-complex Fourier Transform (parallel).
     ///
     /// Further infos: see [`ndrfft`]
-    ndrfft_par, T, Complex<T>, FftHandler<T>, rfft_lane_par);
+    ndrfft_par,
+    T,
+    Complex<T>,
+    FftHandler<T>,
+    rfft_lane_par
+);
+
 create_transform_par!(
     /// Complex-to-real inverse Fourier Transform (parallel).
     ///
     /// Further infos: see [`ndirfft`]
-    ndirfft_par, Complex<T>, T, FftHandler<T>, irfft_lane_par);
+    ndirfft_par,
+    Complex<T>,
+    T,
+    FftHandler<T>,
+    irfft_lane_par
+);
 
 /// # *n*-dimensional real-to-real Cosine Transform (DCT-I).
 ///
@@ -467,12 +581,23 @@ create_transform!(
     ///     1,
     /// );
     /// ```
-    nddct1, T, T, DctHandler<T>, dct1_lane);
+    nddct1,
+    T,
+    T,
+    DctHandler<T>,
+    dct1_lane
+);
+
 create_transform!(
     /// Real-to-real Discrete Cosine Transform of type 1 DCT-I  (parallel).
     ///
     /// Further infos: see [`nddct1`]
-    nddct1_par, T, T, DctHandler<T>, dct1_lane_par);
+    nddct1_par,
+    T,
+    T,
+    DctHandler<T>,
+    dct1_lane_par
+);
 
 /// Tests
 #[cfg(test)]
@@ -483,6 +608,33 @@ mod test {
     #[test]
     /// Successive forward and inverse transform
     fn test_fft() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+        for (i, v) in data.iter_mut().enumerate() {
+            v.re = i as f64;
+            v.im = -1.0 * i as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+        let expected = data.clone();
+        ndfft(&mut data, &mut vhat, &mut handler, 1);
+        ndifft(&mut vhat, &mut data, &mut handler, 1);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a.re - b.re).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+            if (a.im - b.im).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
+    fn test_rfft() {
         let (nx, ny) = (6, 4);
         let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
         let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
