@@ -229,7 +229,7 @@ impl<T: FftNum> FftHandler<T> {
         self.assert_size(self.n, data.len());
         self.assert_size(self.m, out.len());
         for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
-            *b = Complex::new(*d, T::from_f64(0.0).unwrap());
+            *b = Complex::new(*d, T::zero());
         }
         self.plan_fwd.process(&mut self.buffer);
         for (b, d) in self.buffer[0..self.n / 2 + 1].iter().zip(out.iter_mut()) {
@@ -242,7 +242,7 @@ impl<T: FftNum> FftHandler<T> {
         self.assert_size(self.m, out.len());
         let mut buffer = vec![Complex::zero(); self.n];
         for (b, d) in buffer.iter_mut().zip(data.iter()) {
-            *b = Complex::new(*d, T::from_f64(0.0).unwrap());
+            *b = Complex::new(*d, T::zero());
         }
         self.plan_fwd.process(&mut buffer);
         for (b, d) in buffer[0..self.n / 2 + 1].iter().zip(out.iter_mut()) {
@@ -520,11 +520,15 @@ impl<T: FftNum> DctHandler<T> {
     /// (a*,b*,c*,d*)
     fn dct1_lane(&mut self, data: &[T], out: &mut [T]) {
         self.assert_size(data.len());
-        let n = self.buffer.len();
-        self.buffer[0] = Complex::new(data[0], T::from_f64(0.0).unwrap());
+        let m = self.buffer.len();
+        for b in self.buffer.iter_mut() {
+            b.re = T::zero();
+            b.im = T::zero();
+        }
+        self.buffer[0] = Complex::new(data[0], T::zero());
         for (i, d) in data[1..].iter().enumerate() {
-            self.buffer[i + 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
-            self.buffer[n - i - 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
+            self.buffer[i + 1] = Complex::new(*d, T::zero());
+            self.buffer[m - i - 1] = Complex::new(*d, T::zero());
         }
         self.plan.process(&mut self.buffer);
         out[0] = self.buffer[0].re;
@@ -535,12 +539,12 @@ impl<T: FftNum> DctHandler<T> {
 
     fn dct1_lane_par(&self, data: &[T], out: &mut [T]) {
         self.assert_size(data.len());
-        let n = self.n;
-        let mut buffer = vec![Complex::zero(); 2 * (self.n - 1)];
-        buffer[0] = Complex::new(data[0], T::from_f64(0.0).unwrap());
+        let m = 2 * (self.n - 1);
+        let mut buffer = vec![Complex::zero(); m];
+        buffer[0] = Complex::new(data[0], T::zero());
         for (i, d) in data[1..].iter().enumerate() {
-            buffer[i + 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
-            buffer[n - i - 1] = Complex::new(*d, T::from_f64(0.0).unwrap());
+            buffer[i + 1] = Complex::new(*d, T::zero());
+            buffer[m - i - 1] = Complex::new(*d, T::zero());
         }
         self.plan.process(&mut buffer);
         out[0] = buffer[0].re;
@@ -634,6 +638,29 @@ mod test {
 
     #[test]
     /// Successive forward and inverse transform
+    fn test_dct_serial_vs_parallel() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut vhat = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut vhat_par = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64;
+        }
+        let mut handler: DctHandler<f64> = DctHandler::new(nx);
+        nddct1(&mut data, &mut vhat, &mut handler, 0);
+        nddct1_par(&mut data, &mut vhat_par, &mut handler, 0);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in vhat.iter().zip(vhat_par.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
     fn test_rfft() {
         let (nx, ny) = (6, 4);
         let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
@@ -650,6 +677,37 @@ mod test {
         let dif = 1e-6;
         for (a, b) in expected.iter().zip(data.iter()) {
             if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
+    fn test_rfft_serial_vs_parallel() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
+        let mut vhat_par = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+        ndrfft(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
+        ndrfft_par(
+            &mut data.view_mut(),
+            &mut vhat_par.view_mut(),
+            &mut handler,
+            1,
+        );
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in vhat.iter().zip(vhat_par.iter()) {
+            if (a.re - b.re).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+            if (a.im - b.im).abs() > dif {
                 panic!("Large difference of values, got {} expected {}.", b, a)
             }
         }
