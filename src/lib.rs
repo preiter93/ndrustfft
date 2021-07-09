@@ -166,7 +166,7 @@ macro_rules! create_transform_par {
 ///     0,
 /// );
 /// ```
-pub struct FftHandler<T: FftNum> {
+pub struct FftHandler<T> {
     n: usize,
     m: usize,
     plan_fwd: Arc<dyn rustfft::Fft<T>>,
@@ -477,7 +477,7 @@ create_transform_par!(
 ///     1,
 /// );
 /// ```
-pub struct DctHandler<T: FftNum> {
+pub struct DctHandler<T> {
     n: usize,
     plan: Arc<dyn rustfft::Fft<T>>,
     buffer: Vec<Complex<T>>,
