@@ -1,6 +1,6 @@
 //! # ndrustfft: *n*-dimensional complex-to-complex FFT, real-to-complex FFT and real-to-real DCT
 //!
-//! This library is a wrapper for RustFFT that enables performing FFTs of complex-, real-valued
+//! This library is a wrapper for `RustFFT` that enables performing FFTs of complex-, real-valued
 //! data and DCT's on *n*-dimensional arrays (ndarray).
 //!
 //! ndrustfft provides Handler structs for FFT's and DCTs, which must be provided
@@ -175,7 +175,7 @@ pub struct FftHandler<T> {
 }
 
 impl<T: FftNum> FftHandler<T> {
-    /// Creates a new FftHandler.
+    /// Creates a new `FftHandler`.
     ///
     /// # Arguments
     ///
@@ -189,6 +189,8 @@ impl<T: FftNum> FftHandler<T> {
     /// use ndrustfft::FftHandler;
     /// let handler: FftHandler<f64> = FftHandler::new(10);
     /// ```
+    #[allow(clippy::similar_names)]
+    #[must_use]
     pub fn new(n: usize) -> Self {
         let mut planner = FftPlanner::<T>::new();
         let fwd = planner.plan_fft_forward(n);
@@ -204,17 +206,18 @@ impl<T: FftNum> FftHandler<T> {
     }
 
     fn fft_lane(&self, data: &[Complex<T>], out: &mut [Complex<T>]) {
-        self.assert_size(self.n, data.len());
-        self.assert_size(self.n, out.len());
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.n, out.len());
         for (b, d) in out.iter_mut().zip(data.iter()) {
             *b = *d;
         }
         self.plan_fwd.process(out);
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn ifft_lane(&self, data: &[Complex<T>], out: &mut [Complex<T>]) {
-        self.assert_size(self.n, data.len());
-        self.assert_size(self.n, out.len());
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.n, out.len());
         for (b, d) in out.iter_mut().zip(data.iter()) {
             *b = *d;
         }
@@ -226,33 +229,34 @@ impl<T: FftNum> FftHandler<T> {
     }
 
     fn rfft_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
-        self.assert_size(self.n, data.len());
-        self.assert_size(self.m, out.len());
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.m, out.len());
         for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
             *b = Complex::new(*d, T::zero());
         }
         self.plan_fwd.process(&mut self.buffer);
-        for (b, d) in self.buffer[0..self.n / 2 + 1].iter().zip(out.iter_mut()) {
+        for (b, d) in self.buffer[0..=self.n / 2].iter().zip(out.iter_mut()) {
             *d = *b;
         }
     }
 
     fn rfft_lane_par(&self, data: &[T], out: &mut [Complex<T>]) {
-        self.assert_size(self.n, data.len());
-        self.assert_size(self.m, out.len());
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.m, out.len());
         let mut buffer = vec![Complex::zero(); self.n];
         for (b, d) in buffer.iter_mut().zip(data.iter()) {
             *b = Complex::new(*d, T::zero());
         }
         self.plan_fwd.process(&mut buffer);
-        for (b, d) in buffer[0..self.n / 2 + 1].iter().zip(out.iter_mut()) {
+        for (b, d) in buffer[0..=self.n / 2].iter().zip(out.iter_mut()) {
             *d = *b;
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn irfft_lane(&mut self, data: &[Complex<T>], out: &mut [T]) {
-        self.assert_size(self.m, data.len());
-        self.assert_size(self.n, out.len());
+        Self::assert_size(self.m, data.len());
+        Self::assert_size(self.n, out.len());
         let m = data.len();
         for (b, d) in self.buffer[..m].iter_mut().zip(data.iter()) {
             *b = *d;
@@ -268,8 +272,9 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn irfft_lane_par(&self, data: &[Complex<T>], out: &mut [T]) {
-        self.assert_size(self.m, data.len());
+        Self::assert_size(self.m, data.len());
         let m = data.len();
         let mut buffer = vec![Complex::zero(); self.n];
         for (b, d) in buffer[..m].iter_mut().zip(data.iter()) {
@@ -286,7 +291,7 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    fn assert_size(&self, n: usize, size: usize) {
+    fn assert_size(n: usize, size: usize) {
         assert!(
             n == size,
             "Size mismatch in fft, got {} expected {}",
@@ -484,7 +489,7 @@ pub struct DctHandler<T> {
 }
 
 impl<T: FftNum> DctHandler<T> {
-    /// Creates a new DctHandler.
+    /// Creates a new `DctHandler`.
     ///
     /// # Arguments
     ///
@@ -497,6 +502,7 @@ impl<T: FftNum> DctHandler<T> {
     /// use ndrustfft::DctHandler;
     /// let handler: DctHandler<f64> = DctHandler::new(10);
     /// ```
+    #[must_use]
     pub fn new(n: usize) -> Self {
         let m = 2 * (n - 1);
         let mut planner = FftPlanner::<T>::new();
@@ -521,7 +527,7 @@ impl<T: FftNum> DctHandler<T> {
     fn dct1_lane(&mut self, data: &[T], out: &mut [T]) {
         self.assert_size(data.len());
         let m = self.buffer.len();
-        for b in self.buffer.iter_mut() {
+        for b in &mut self.buffer.iter_mut() {
             b.re = T::zero();
             b.im = T::zero();
         }
