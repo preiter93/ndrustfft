@@ -20,12 +20,12 @@
 //! ## Example
 //! 2-Dimensional real-to-complex fft along first axis
 //! ```
-//! use ndarray::{Array, Dim, Ix};
+//! use ndarray::{Array2, Dim, Ix};
 //! use ndrustfft::{ndrfft, Complex, FftHandler};
 //!
 //! let (nx, ny) = (6, 4);
-//! let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-//! let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
+//! let mut data = Array2::<f64>::zeros((nx, ny));
+//! let mut vhat = Array2::<Complex<f64>>::zeros((nx / 2 + 1, ny));
 //! for (i, v) in data.iter_mut().enumerate() {
 //!     *v = i as f64;
 //! }
@@ -149,12 +149,12 @@ macro_rules! create_transform_par {
 /// # Example
 /// 2-Dimensional real-to-complex fft along first axis
 /// ```
-/// use ndarray::{Array, Dim, Ix};
+/// use ndarray::{Array2, Dim, Ix};
 /// use ndrustfft::{ndrfft, Complex, FftHandler};
 ///
 /// let (nx, ny) = (6, 4);
-/// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-/// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
+/// let mut data = Array2::<f64>::zeros((nx, ny));
+/// let mut vhat = Array2::<Complex<f64>>::zeros((nx / 2 + 1, ny));
 /// for (i, v) in data.iter_mut().enumerate() {
 ///     *v = i as f64;
 /// }
@@ -166,6 +166,7 @@ macro_rules! create_transform_par {
 ///     0,
 /// );
 /// ```
+#[derive(Clone)]
 pub struct FftHandler<T> {
     n: usize,
     m: usize,
@@ -305,12 +306,12 @@ create_transform!(
     /// Complex-to-complex Fourier Transform (serial).
     /// # Example
     /// ```
-    /// use ndarray::{Array, Dim, Ix};
+    /// use ndarray::{Array2, Dim, Ix};
     /// use ndrustfft::{ndfft, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
-    /// let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
-    /// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// let mut data = Array2::<Complex<f64>>::zeros((nx, ny));
+    /// let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
     /// for (i, v) in data.iter_mut().enumerate() {
     ///     v.re = i as f64;
     ///     v.im = -1.0*i as f64;
@@ -329,12 +330,12 @@ create_transform!(
     /// Complex-to-complex Inverse Fourier Transform (serial).
     /// # Example
     /// ```
-    /// use ndarray::{Array, Dim, Ix};
+    /// use ndarray::Array2;
     /// use ndrustfft::{ndfft, ndifft, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
-    /// let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
-    /// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// let mut data = Array2::<Complex<f64>>::zeros((nx, ny));
+    /// let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
     /// for (i, v) in data.iter_mut().enumerate() {
     ///     v.re = i as f64;
     ///     v.im = -1.0*i as f64;
@@ -354,12 +355,12 @@ create_transform!(
     /// Real-to-complex Fourier Transform (serial).
     /// # Example
     /// ```
-    /// use ndarray::{Array, Dim, Ix};
+    /// use ndarray::Array2;
     /// use ndrustfft::{ndrfft, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
-    /// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-    /// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
+    /// let mut data = Array2::<f64>::zeros((nx, ny));
+    /// let mut vhat = Array2::<Complex<f64>>::zeros((nx / 2 + 1, ny));
     /// for (i, v) in data.iter_mut().enumerate() {
     ///     *v = i as f64;
     /// }
@@ -382,12 +383,12 @@ create_transform!(
     /// Complex-to-real inverse Fourier Transform (serial).
     /// # Example
     /// ```
-    /// use ndarray::{Array, Dim, Ix};
+    /// use ndarray::Array2;
     /// use ndrustfft::{ndirfft, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
-    /// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-    /// let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
+    /// let mut data = Array2::<f64>::zeros((nx, ny));
+    /// let mut vhat = Array2::<Complex<f64>>::zeros((nx / 2 + 1, ny));
     /// for (i, v) in vhat.iter_mut().enumerate() {
     ///     v.re = i as f64;
     /// }
@@ -465,12 +466,12 @@ create_transform_par!(
 /// # Example
 /// 2-Dimensional real-to-real dft along second axis
 /// ```
-/// use ndarray::{Array, Dim, Ix};
+/// use ndarray::Array2;
 /// use ndrustfft::{DctHandler, nddct1};
 ///
 /// let (nx, ny) = (6, 4);
-/// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-/// let mut vhat = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+/// let mut data = Array2::<f64>::zeros((nx, ny));
+/// let mut vhat = Array2::<f64>::zeros((nx, ny));
 /// for (i, v) in data.iter_mut().enumerate() {
 ///     *v = i as f64;
 /// }
@@ -482,6 +483,7 @@ create_transform_par!(
 ///     1,
 /// );
 /// ```
+#[derive(Clone)]
 pub struct DctHandler<T> {
     n: usize,
     plan: Arc<dyn rustfft::Fft<T>>,
@@ -574,12 +576,12 @@ create_transform!(
     ///
     /// # Example
     /// ```
-    /// use ndarray::{Array, Dim, Ix};
+    /// use ndarray::Array2;
     /// use ndrustfft::{DctHandler, nddct1};
     ///
     /// let (nx, ny) = (6, 4);
-    /// let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-    /// let mut vhat = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+    /// let mut data = Array2::<f64>::zeros((nx, ny));
+    /// let mut vhat = Array2::<f64>::zeros((nx, ny));
     /// for (i, v) in data.iter_mut().enumerate() {
     ///     *v = i as f64;
     /// }
@@ -613,14 +615,14 @@ create_transform!(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ndarray::{Array, Dim, Ix};
+    use ndarray::Array2;
 
     #[test]
     /// Successive forward and inverse transform
     fn test_fft() {
         let (nx, ny) = (6, 4);
-        let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
-        let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut data = Array2::<Complex<f64>>::zeros((nx, ny));
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
         for (i, v) in data.iter_mut().enumerate() {
             v.re = i as f64;
             v.im = -1.0 * i as f64;
@@ -646,9 +648,9 @@ mod test {
     /// Successive forward and inverse transform
     fn test_dct_serial_vs_parallel() {
         let (nx, ny) = (6, 4);
-        let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-        let mut vhat = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-        let mut vhat_par = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
+        let mut data = Array2::<f64>::zeros((nx, ny));
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut vhat_par = Array2::<f64>::zeros((nx, ny));
         for (i, v) in data.iter_mut().enumerate() {
             *v = i as f64;
         }
@@ -669,8 +671,8 @@ mod test {
     /// Successive forward and inverse transform
     fn test_rfft() {
         let (nx, ny) = (6, 4);
-        let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-        let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
+        let mut data = Array2::<f64>::zeros((nx, ny));
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
         for (i, v) in data.iter_mut().enumerate() {
             *v = i as f64;
         }
@@ -692,9 +694,9 @@ mod test {
     /// Successive forward and inverse transform
     fn test_rfft_serial_vs_parallel() {
         let (nx, ny) = (6, 4);
-        let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-        let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
-        let mut vhat_par = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx, ny / 2 + 1));
+        let mut data = Array2::<f64>::zeros((nx, ny));
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        let mut vhat_par = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
         for (i, v) in data.iter_mut().enumerate() {
             *v = i as f64;
         }

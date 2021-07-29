@@ -1,13 +1,12 @@
 # ndrustfft
-<img align="right" src="https://rustacean.net/assets/cuddlyferris.png" width="70">
 
-## ndrustfft: *n*-dimensional real-to-complex FFT and real-to-real DCT
+## ndrustfft: *n*-dimensional complex-to-complex FFT, real-to-complex FFT and real-to-real DCT
 
-This library is a wrapper for RustFFT that enables performing FFTs of real-valued data
-and DCT's on *n*-dimensional arrays (ndarray).
+This library is a wrapper for `RustFFT` that enables performing FFTs of complex-, real-valued
+data and DCT's on *n*-dimensional arrays (ndarray).
 
 ndrustfft provides Handler structs for FFT's and DCTs, which must be provided
-to the respective ndrfft, nddct function alongside with ArrayViews.
+to the respective ndrfft, nddct function alongside with Arrays.
 The Handlers contain the transform plans and buffers which reduce allocation cost.
 The Handlers implement a process function, which is a wrapper around Rustfft's
 process function with additional steps, i.e. to provide a real-to complex fft,
@@ -23,12 +22,12 @@ which leverages the parallel abilities of ndarray.
 ### Example
 2-Dimensional real-to-complex fft along first axis
 ```rust
-use ndarray::{Array, Dim, Ix};
+use ndarray::{Array2, Dim, Ix};
 use ndrustfft::{ndrfft, Complex, FftHandler};
 
 let (nx, ny) = (6, 4);
-let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((nx, ny));
-let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((nx / 2 + 1, ny));
+let mut data = Array2::<f64>::zeros((nx, ny));
+let mut vhat = Array2::<Complex<f64>>::zeros((nx / 2 + 1, ny));
 for (i, v) in data.iter_mut().enumerate() {
     *v = i as f64;
 }
@@ -40,3 +39,5 @@ ndrfft(
     0,
 );
 ```
+
+License: MIT
