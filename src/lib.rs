@@ -600,7 +600,7 @@ create_transform!(
     dct1_lane
 );
 
-create_transform!(
+create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 1 DCT-I  (parallel).
     ///
     /// Further infos: see [`nddct1`]
