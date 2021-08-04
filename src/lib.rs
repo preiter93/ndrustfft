@@ -4,7 +4,7 @@
 //! data and DCT's on *n*-dimensional arrays (ndarray).
 //!
 //! ndrustfft provides Handler structs for FFT's and DCTs, which must be provided
-//! to the respective ndrfft, nddct function alongside with Arrays.
+//! to the respective [`ndfft`], [`nddct`], [`ndfft_r2c`], [`ndfft_r2hc`] function alongside with Arrays.
 //! The Handlers contain the transform plans and buffers which reduce allocation cost.
 //! The Handlers implement a process function, which is a wrapper around Rustfft's
 //! process function with additional steps, i.e. to provide a real-to complex fft,
@@ -21,7 +21,7 @@
 //! 2-Dimensional real-to-complex fft along first axis
 //! ```
 //! use ndarray::{Array2, Dim, Ix};
-//! use ndrustfft::{ndrfft, Complex, FftHandler};
+//! use ndrustfft::{ndfft_r2c, Complex, FftHandler};
 //!
 //! let (nx, ny) = (6, 4);
 //! let mut data = Array2::<f64>::zeros((nx, ny));
@@ -30,7 +30,7 @@
 //!     *v = i as f64;
 //! }
 //! let mut fft_handler: FftHandler<f64> = FftHandler::new(nx);
-//! ndrfft(
+//! ndfft_r2c(
 //!     &mut data.view_mut(),
 //!     &mut vhat.view_mut(),
 //!     &mut fft_handler,
@@ -140,17 +140,17 @@ macro_rules! create_transform_par {
 /// axis, all other array dimensions are unaffected.
 /// Performs best on sizes which are mutiple of 2 or 3.
 ///
-/// The accompanying functions for the forward transform are [`ndrfft`] (serial) and
-/// [`ndrfft_par`] (parallel).
+/// The accompanying functions for the forward transform are [`ndfft_r2c`] (serial) and
+/// [`ndfft_r2c_par`] (parallel).
 ///
-/// The accompanying functions for the inverse transform are [`ndirfft`] (serial) and
-/// [`ndirfft_par`] (parallel).
+/// The accompanying functions for the inverse transform are [`ndifft_r2c`] (serial) and
+/// [`ndifft_r2c_par`] (parallel).
 ///
 /// # Example
 /// 2-Dimensional real-to-complex fft along first axis
 /// ```
 /// use ndarray::{Array2, Dim, Ix};
-/// use ndrustfft::{ndrfft, Complex, FftHandler};
+/// use ndrustfft::{ndfft_r2c, Complex, FftHandler};
 ///
 /// let (nx, ny) = (6, 4);
 /// let mut data = Array2::<f64>::zeros((nx, ny));
@@ -159,7 +159,7 @@ macro_rules! create_transform_par {
 ///     *v = i as f64;
 /// }
 /// let mut fft_handler: FftHandler<f64> = FftHandler::new(nx);
-/// ndrfft(
+/// ndfft_r2c(
 ///     &mut data.view_mut(),
 ///     &mut vhat.view_mut(),
 ///     &mut fft_handler,
@@ -229,7 +229,7 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    fn rfft_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
+    fn fft_r2c_lane(&mut self, data: &[T], out: &mut [Complex<T>]) {
         Self::assert_size(self.n, data.len());
         Self::assert_size(self.m, out.len());
         for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
@@ -241,7 +241,7 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    fn rfft_lane_par(&self, data: &[T], out: &mut [Complex<T>]) {
+    fn fft_r2c_lane_par(&self, data: &[T], out: &mut [Complex<T>]) {
         Self::assert_size(self.n, data.len());
         Self::assert_size(self.m, out.len());
         let mut buffer = vec![Complex::zero(); self.n];
@@ -255,7 +255,7 @@ impl<T: FftNum> FftHandler<T> {
     }
 
     #[allow(clippy::cast_precision_loss)]
-    fn irfft_lane(&mut self, data: &[Complex<T>], out: &mut [T]) {
+    fn ifft_r2c_lane(&mut self, data: &[Complex<T>], out: &mut [T]) {
         Self::assert_size(self.m, data.len());
         Self::assert_size(self.n, out.len());
         let m = data.len();
@@ -274,7 +274,7 @@ impl<T: FftNum> FftHandler<T> {
     }
 
     #[allow(clippy::cast_precision_loss)]
-    fn irfft_lane_par(&self, data: &[Complex<T>], out: &mut [T]) {
+    fn ifft_r2c_lane_par(&self, data: &[Complex<T>], out: &mut [T]) {
         Self::assert_size(self.m, data.len());
         let m = data.len();
         let mut buffer = vec![Complex::zero(); self.n];
@@ -285,6 +285,109 @@ impl<T: FftNum> FftHandler<T> {
             b.re = d.re;
             b.im = -d.im;
         }
+        self.plan_bwd.process(&mut buffer);
+        let n64 = T::from_f64(1. / self.n as f64).unwrap();
+        for (b, d) in buffer.iter().zip(out.iter_mut()) {
+            *d = b.re * n64;
+        }
+    }
+
+    /// Real to half-complex [r0, r1, r2, r3, i2, i1]
+    #[allow(clippy::cast_precision_loss)]
+    fn fft_r2hc_lane(&mut self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.n, out.len());
+        for (b, d) in self.buffer.iter_mut().zip(data.iter()) {
+            *b = Complex::new(*d, T::zero());
+        }
+        self.plan_fwd.process(&mut self.buffer);
+        // Transfer to half-complex format
+        out[0] = self.buffer[0].re;
+        out[self.n / 2] = self.buffer[self.n / 2].re;
+        let (left, right) = out.split_at_mut(self.n / 2);
+        for (b, (d1, d2)) in self.buffer[1..self.n / 2]
+            .iter()
+            .zip(left[1..].iter_mut().zip(right[1..].iter_mut().rev()))
+        {
+            *d1 = b.re;
+            *d2 = b.im;
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn fft_r2hc_lane_par(&self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.n, out.len());
+        let mut buffer = vec![Complex::zero(); self.n];
+        for (b, d) in buffer.iter_mut().zip(data.iter()) {
+            *b = Complex::new(*d, T::zero());
+        }
+        self.plan_fwd.process(&mut buffer);
+        // Transfer to half-complex format
+        out[0] = buffer[0].re;
+        out[self.n / 2] = buffer[self.n / 2].re;
+        let (left, right) = out.split_at_mut(self.n / 2);
+        for (b, (d1, d2)) in buffer[1..self.n / 2]
+            .iter()
+            .zip(left[1..].iter_mut().zip(right[1..].iter_mut().rev()))
+        {
+            *d1 = b.re;
+            *d2 = b.im;
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss, clippy::shadow_unrelated)]
+    fn ifft_r2hc_lane(&mut self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.n, out.len());
+        self.buffer[0].re = data[0];
+        self.buffer[0].im = T::zero();
+        self.buffer[self.n / 2].re = data[self.n / 2];
+        self.buffer[self.n / 2].im = T::zero();
+        let (left, right) = data.split_at(self.n / 2);
+        for (b, (d1, d2)) in self.buffer[1..self.n / 2]
+            .iter_mut()
+            .zip(left[1..].iter().zip(right[1..].iter().rev()))
+        {
+            b.re = *d1;
+            b.im = *d2;
+        }
+        // Conjugate part
+        let (left, right) = self.buffer.split_at_mut(self.n / 2);
+        for (r, l) in right[1..].iter_mut().zip(left[1..].iter()) {
+            r.re = l.re;
+            r.im = -l.im;
+        }
+
+        self.plan_bwd.process(&mut self.buffer);
+        let n64 = T::from_f64(1. / self.n as f64).unwrap();
+        for (b, d) in self.buffer.iter().zip(out.iter_mut()) {
+            *d = b.re * n64;
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss, clippy::shadow_unrelated)]
+    fn ifft_r2hc_lane_par(&self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self.n, data.len());
+        Self::assert_size(self.n, out.len());
+        let mut buffer = vec![Complex::zero(); self.n];
+        buffer[0].re = data[0];
+        buffer[self.n / 2].re = data[self.n / 2];
+        let (left, right) = data.split_at(self.n / 2);
+        for (b, (d1, d2)) in buffer[1..self.n / 2]
+            .iter_mut()
+            .zip(left[1..].iter().zip(right[1..].iter().rev()))
+        {
+            b.re = *d1;
+            b.im = *d2;
+        }
+        // Conjugate part
+        let (left, right) = buffer.split_at_mut(self.n / 2);
+        for (r, l) in right[1..].iter_mut().zip(left[1..].iter()) {
+            r.re = l.re;
+            r.im = -l.im;
+        }
+
         self.plan_bwd.process(&mut buffer);
         let n64 = T::from_f64(1. / self.n as f64).unwrap();
         for (b, d) in buffer.iter().zip(out.iter_mut()) {
@@ -356,7 +459,7 @@ create_transform!(
     /// # Example
     /// ```
     /// use ndarray::Array2;
-    /// use ndrustfft::{ndrfft, Complex, FftHandler};
+    /// use ndrustfft::{ndfft_r2c, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
     /// let mut data = Array2::<f64>::zeros((nx, ny));
@@ -365,18 +468,18 @@ create_transform!(
     ///     *v = i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
-    /// ndrfft(
+    /// ndfft_r2c(
     ///     &mut data.view_mut(),
     ///     &mut vhat.view_mut(),
     ///     &mut handler,
     ///     0,
     /// );
     /// ```
-    ndrfft,
+    ndfft_r2c,
     T,
     Complex<T>,
     FftHandler<T>,
-    rfft_lane
+    fft_r2c_lane
 );
 
 create_transform!(
@@ -384,7 +487,7 @@ create_transform!(
     /// # Example
     /// ```
     /// use ndarray::Array2;
-    /// use ndrustfft::{ndirfft, Complex, FftHandler};
+    /// use ndrustfft::{ndifft_r2c, Complex, FftHandler};
     ///
     /// let (nx, ny) = (6, 4);
     /// let mut data = Array2::<f64>::zeros((nx, ny));
@@ -393,18 +496,74 @@ create_transform!(
     ///     v.re = i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
-    /// ndirfft(
+    /// ndifft_r2c(
     ///     &mut vhat.view_mut(),
     ///     &mut data.view_mut(),
     ///     &mut handler,
     ///     0,
     /// );
     /// ```
-    ndirfft,
+    ndifft_r2c,
     Complex<T>,
     T,
     FftHandler<T>,
-    irfft_lane
+    ifft_r2c_lane
+);
+
+create_transform!(
+    /// Real-to-real Fourier Transform (serial).
+    /// # Example
+    /// ```
+    /// use ndarray::Array2;
+    /// use ndrustfft::{ndfft_r2hc, Complex, FftHandler};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array2::<f64>::zeros((nx, ny));
+    /// let mut vhat = Array2::<f64>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     *v = i as f64;
+    /// }
+    /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
+    /// ndfft_r2hc(
+    ///     &mut data.view_mut(),
+    ///     &mut vhat.view_mut(),
+    ///     &mut handler,
+    ///     0,
+    /// );
+    /// ```
+    ndfft_r2hc,
+    T,
+    T,
+    FftHandler<T>,
+    fft_r2hc_lane
+);
+
+create_transform!(
+    /// Real-to-real Fourier Transform (serial).
+    /// # Example
+    /// ```
+    /// use ndarray::Array2;
+    /// use ndrustfft::{ndifft_r2hc, Complex, FftHandler};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array2::<f64>::zeros((nx, ny));
+    /// let mut vhat = Array2::<f64>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     *v = i as f64;
+    /// }
+    /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
+    /// ndifft_r2hc(
+    ///     &mut data.view_mut(),
+    ///     &mut vhat.view_mut(),
+    ///     &mut handler,
+    ///     0,
+    /// );
+    /// ```
+    ndifft_r2hc,
+    T,
+    T,
+    FftHandler<T>,
+    ifft_r2hc_lane
 );
 
 create_transform_par!(
@@ -432,23 +591,45 @@ create_transform_par!(
 create_transform_par!(
     /// Real-to-complex Fourier Transform (parallel).
     ///
-    /// Further infos: see [`ndrfft`]
-    ndrfft_par,
+    /// Further infos: see [`ndfft_r2c`]
+    ndfft_r2c_par,
     T,
     Complex<T>,
     FftHandler<T>,
-    rfft_lane_par
+    fft_r2c_lane_par
 );
 
 create_transform_par!(
     /// Complex-to-real inverse Fourier Transform (parallel).
     ///
-    /// Further infos: see [`ndirfft`]
-    ndirfft_par,
+    /// Further infos: see [`ndifft_r2c`]
+    ndifft_r2c_par,
     Complex<T>,
     T,
     FftHandler<T>,
-    irfft_lane_par
+    ifft_r2c_lane_par
+);
+
+create_transform_par!(
+    /// Real-to-real Fourier Transform (parallel).
+    ///
+    /// Further infos: see [`ndfft_r2hc`]
+    ndfft_r2hc_par,
+    T,
+    T,
+    FftHandler<T>,
+    fft_r2hc_lane_par
+);
+
+create_transform_par!(
+    /// Real-to-real inverse Fourier Transform (parallel).
+    ///
+    /// Further infos: see [`ndifft_r2hc`]
+    ndifft_r2hc_par,
+    T,
+    T,
+    FftHandler<T>,
+    ifft_r2hc_lane_par
 );
 
 /// # *n*-dimensional real-to-real Cosine Transform (DCT-I).
@@ -646,6 +827,129 @@ mod test {
 
     #[test]
     /// Successive forward and inverse transform
+    fn test_fft_r2c() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array2::<f64>::zeros((nx, ny));
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64 + i.pow(2) as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+        let expected = data.clone();
+        ndfft_r2c(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
+        ndifft_r2c(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 1);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
+    fn test_fft_r2hc() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array2::<f64>::zeros((nx, ny));
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64 + i.pow(2) as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+        let expected = data.clone();
+        ndfft_r2hc(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
+        ndifft_r2hc(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 1);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
+    fn test_fft_r2c_vs_r2hc() {
+        use ndarray::s;
+        // Real-to-complex
+        let nx = 6;
+        let mut data = Array1::<f64>::zeros(nx);
+        let mut vhat_r2c = Array1::<Complex<f64>>::zeros(nx / 2 + 1);
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(nx);
+        ndfft_r2c(
+            &mut data.view_mut(),
+            &mut vhat_r2c.view_mut(),
+            &mut handler,
+            0,
+        );
+        // Real-to-real
+        let mut vhat_r2hc = Array1::<f64>::zeros(nx);
+        ndfft_r2hc(
+            &mut data.view_mut(),
+            &mut vhat_r2hc.view_mut(),
+            &mut handler,
+            0,
+        );
+
+        // assert
+        assert!(vhat_r2hc[0] == vhat_r2c[0].re);
+        assert!(vhat_r2hc[nx / 2] == vhat_r2c[nx / 2].re);
+        for (b, d) in vhat_r2c
+            .slice(s![1..nx / 2])
+            .iter()
+            .zip(vhat_r2hc.slice(s![1..nx / 2]).iter())
+        {
+            assert!(*d == b.re);
+        }
+        for (b, d) in vhat_r2c
+            .slice(s![1..nx / 2])
+            .iter()
+            .zip(vhat_r2hc.slice(s![nx / 2 + 1..]).iter().rev())
+        {
+            assert!(*d == b.im);
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
+    fn test_fft_r2c_serial_vs_parallel() {
+        let (nx, ny) = (6, 4);
+        let mut data = Array2::<f64>::zeros((nx, ny));
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        let mut vhat_par = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        for (i, v) in data.iter_mut().enumerate() {
+            *v = i as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+        ndfft_r2c(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
+        ndfft_r2c_par(
+            &mut data.view_mut(),
+            &mut vhat_par.view_mut(),
+            &mut handler,
+            1,
+        );
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in vhat.iter().zip(vhat_par.iter()) {
+            if (a.re - b.re).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+            if (a.im - b.im).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
+    /// Successive forward and inverse transform
     fn test_dct_serial_vs_parallel() {
         let (nx, ny) = (6, 4);
         let mut data = Array2::<f64>::zeros((nx, ny));
@@ -662,60 +966,6 @@ mod test {
         let dif = 1e-6;
         for (a, b) in vhat.iter().zip(vhat_par.iter()) {
             if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-    }
-
-    #[test]
-    /// Successive forward and inverse transform
-    fn test_rfft() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<f64>::zeros((nx, ny));
-        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64;
-        }
-        let mut handler: FftHandler<f64> = FftHandler::new(ny);
-        let expected = data.clone();
-        ndrfft(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
-        ndirfft(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 1);
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-    }
-
-    #[test]
-    /// Successive forward and inverse transform
-    fn test_rfft_serial_vs_parallel() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<f64>::zeros((nx, ny));
-        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
-        let mut vhat_par = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64;
-        }
-        let mut handler: FftHandler<f64> = FftHandler::new(ny);
-        ndrfft(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
-        ndrfft_par(
-            &mut data.view_mut(),
-            &mut vhat_par.view_mut(),
-            &mut handler,
-            1,
-        );
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in vhat.iter().zip(vhat_par.iter()) {
-            if (a.re - b.re).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-            if (a.im - b.im).abs() > dif {
                 panic!("Large difference of values, got {} expected {}.", b, a)
             }
         }
