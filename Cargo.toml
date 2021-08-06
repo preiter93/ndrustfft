@@ -1,6 +1,6 @@
 [package]
 name = "ndrustfft"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
 description = "N-dimensional real-to-complex FFT and real-to-real DCT for Rust"
