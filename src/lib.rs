@@ -4,14 +4,21 @@
 //! data and DCT's on *n*-dimensional arrays (ndarray).
 //!
 //! ndrustfft provides Handler structs for FFT's and DCTs, which must be provided
-//! to the respective [`ndfft`], [`nddct`], [`ndfft_r2c`], [`ndfft_r2hc`] function alongside with Arrays.
+//! to the respective function (see implemented transforms below) alongside with the arrays.
 //! The Handlers contain the transform plans and buffers which reduce allocation cost.
 //! The Handlers implement a process function, which is a wrapper around Rustfft's
-//! process function with additional steps, i.e. to provide a real-to complex fft,
-//! or to construct the discrete cosine transform (dct) from a classical fft.
+//! process function with additional functionality.
+//! Transforms along the outermost axis are in general the fastest, while transforms along
+//! other axis' will create temporary copies of the input array.
 //!
-//! The transform along the outermost axis are the cheapest, while transforms along
-//! other axis' need to copy data temporary.
+//! ## Implemented transforms
+//! ### Complex-to-complex
+//! - `fft` / `ifft`: [`ndfft`],[`ndfft_par`], [`ndifft`],[`ndifft_par`]
+//! ### Real-to-complex
+//! - `fft_r2c` / `ifft_r2c`: [`ndfft_r2c`],[`ndfft_r2c_par`], [`ndifft_r2c`],[`ndifft_r2c_par`]
+//! ### Real-to-real
+//! - `fft_r2hc` / `ifft_r2hc`: [`ndfft_r2hc`],[`ndfft_r2hc_par`], [`ndifft_r2hc`],[`ndifft_r2hc_par`]
+//! - `dct1`: [`nddct1`],[`nddct1_par`]
 //!
 //! ## Parallel
 //! The library ships all functions with a parallel version
@@ -159,12 +166,7 @@ macro_rules! create_transform_par {
 ///     *v = i as f64;
 /// }
 /// let mut fft_handler: FftHandler<f64> = FftHandler::new(nx);
-/// ndfft_r2c(
-///     &mut data.view_mut(),
-///     &mut vhat.view_mut(),
-///     &mut fft_handler,
-///     0,
-/// );
+/// ndfft_r2c(&mut data, &mut vhat, &mut fft_handler, 0);
 /// ```
 #[derive(Clone)]
 pub struct FftHandler<T> {
@@ -468,12 +470,7 @@ create_transform!(
     ///     *v = i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
-    /// ndfft_r2c(
-    ///     &mut data.view_mut(),
-    ///     &mut vhat.view_mut(),
-    ///     &mut handler,
-    ///     0,
-    /// );
+    /// ndfft_r2c(&mut data, &mut vhat, &mut handler, 0);
     /// ```
     ndfft_r2c,
     T,
@@ -496,12 +493,7 @@ create_transform!(
     ///     v.re = i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
-    /// ndifft_r2c(
-    ///     &mut vhat.view_mut(),
-    ///     &mut data.view_mut(),
-    ///     &mut handler,
-    ///     0,
-    /// );
+    /// ndifft_r2c(&mut vhat, &mut data, &mut handler, 0);
     /// ```
     ndifft_r2c,
     Complex<T>,
@@ -524,12 +516,7 @@ create_transform!(
     ///     *v = i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
-    /// ndfft_r2hc(
-    ///     &mut data.view_mut(),
-    ///     &mut vhat.view_mut(),
-    ///     &mut handler,
-    ///     0,
-    /// );
+    /// ndfft_r2hc(&mut data, &mut vhat, &mut handler, 0);
     /// ```
     ndfft_r2hc,
     T,
@@ -548,16 +535,11 @@ create_transform!(
     /// let (nx, ny) = (6, 4);
     /// let mut data = Array2::<f64>::zeros((nx, ny));
     /// let mut vhat = Array2::<f64>::zeros((nx, ny));
-    /// for (i, v) in data.iter_mut().enumerate() {
+    /// for (i, v) in vhat.iter_mut().enumerate() {
     ///     *v = i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(nx);
-    /// ndifft_r2hc(
-    ///     &mut data.view_mut(),
-    ///     &mut vhat.view_mut(),
-    ///     &mut handler,
-    ///     0,
-    /// );
+    /// ndifft_r2hc(&mut vhat, &mut data, &mut handler, 0);
     /// ```
     ndifft_r2hc,
     T,
@@ -657,12 +639,7 @@ create_transform_par!(
 ///     *v = i as f64;
 /// }
 /// let mut handler: DctHandler<f64> = DctHandler::new(ny);
-/// nddct1(
-///     &mut data.view_mut(),
-///     &mut vhat.view_mut(),
-///     &mut handler,
-///     1,
-/// );
+/// nddct1(&mut data, &mut vhat, &mut handler, 1);
 /// ```
 #[derive(Clone)]
 pub struct DctHandler<T> {
@@ -767,12 +744,7 @@ create_transform!(
     ///     *v = i as f64;
     /// }
     /// let mut handler: DctHandler<f64> = DctHandler::new(ny);
-    /// nddct1(
-    ///     &mut data.view_mut(),
-    ///     &mut vhat.view_mut(),
-    ///     &mut handler,
-    ///     1,
-    /// );
+    /// nddct1(&mut data, &mut vhat, &mut handler, 1);
     /// ```
     nddct1,
     T,
