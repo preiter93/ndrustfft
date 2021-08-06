@@ -264,7 +264,7 @@ impl<T: FftNum> FftHandler<T> {
         for (b, d) in self.buffer[..m].iter_mut().zip(data.iter()) {
             *b = *d;
         }
-        for (b, d) in self.buffer[m..].iter_mut().zip(data[1..].iter()) {
+        for (b, d) in self.buffer[m..].iter_mut().rev().zip(data[1..].iter()) {
             b.re = d.re;
             b.im = -d.im;
         }
@@ -283,7 +283,7 @@ impl<T: FftNum> FftHandler<T> {
         for (b, d) in buffer[..m].iter_mut().zip(data.iter()) {
             *b = *d;
         }
-        for (b, d) in buffer[m..].iter_mut().zip(data[1..].iter()) {
+        for (b, d) in buffer[m..].iter_mut().rev().zip(data[1..].iter()) {
             b.re = d.re;
             b.im = -d.im;
         }
@@ -356,7 +356,7 @@ impl<T: FftNum> FftHandler<T> {
         }
         // Conjugate part
         let (left, right) = self.buffer.split_at_mut(self.n / 2);
-        for (r, l) in right[1..].iter_mut().zip(left[1..].iter()) {
+        for (r, l) in right[1..].iter_mut().rev().zip(left[1..].iter()) {
             r.re = l.re;
             r.im = -l.im;
         }
@@ -385,7 +385,7 @@ impl<T: FftNum> FftHandler<T> {
         }
         // Conjugate part
         let (left, right) = buffer.split_at_mut(self.n / 2);
-        for (r, l) in right[1..].iter_mut().zip(left[1..].iter()) {
+        for (r, l) in right[1..].iter_mut().rev().zip(left[1..].iter()) {
             r.re = l.re;
             r.im = -l.im;
         }
@@ -768,7 +768,7 @@ create_transform_par!(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ndarray::Array2;
+    use ndarray::{array, Array1, Array2};
 
     #[test]
     /// Successive forward and inverse transform
@@ -798,8 +798,41 @@ mod test {
     }
 
     #[test]
+    /// Forward and backward transform with known solution
+    fn test_fft_r2c1() {
+        let nx = 8;
+        let mut data = Array1::<f64>::zeros(nx);
+        let mut vhat = Array1::<Complex<f64>>::zeros(nx / 2 + 1);
+        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
+        let expected = data.clone();
+        let mut handler: FftHandler<f64> = FftHandler::new(nx);
+        ndfft_r2c(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
+        ndifft_r2c(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+
+        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
+        ndfft_r2c_par(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
+        ndifft_r2c_par(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
     /// Successive forward and inverse transform
-    fn test_fft_r2c() {
+    fn test_fft_r2c2() {
         let (nx, ny) = (6, 4);
         let mut data = Array2::<f64>::zeros((nx, ny));
         let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
@@ -821,8 +854,41 @@ mod test {
     }
 
     #[test]
+    /// Forward and backward transform with known solution
+    fn test_fft_r2hc1() {
+        let nx = 8;
+        let mut data = Array1::<f64>::zeros(nx);
+        let mut vhat = Array1::<f64>::zeros(nx);
+        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
+        let expected = data.clone();
+        let mut handler: FftHandler<f64> = FftHandler::new(nx);
+        ndfft_r2hc(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
+        ndifft_r2hc(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+
+        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
+        ndfft_r2hc_par(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
+        ndifft_r2hc_par(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
+
+        // Assert
+        let dif = 1e-6;
+        for (a, b) in expected.iter().zip(data.iter()) {
+            if (a - b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    #[test]
     /// Successive forward and inverse transform
-    fn test_fft_r2hc() {
+    fn test_fft_r2hc2() {
         let (nx, ny) = (6, 4);
         let mut data = Array2::<f64>::zeros((nx, ny));
         let mut vhat = Array2::<f64>::zeros((nx, ny));
