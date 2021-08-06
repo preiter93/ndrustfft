@@ -48,7 +48,7 @@
 #![warn(missing_doc_code_examples)]
 extern crate ndarray;
 extern crate rustfft;
-use ndarray::{Array1, ArrayBase, Dimension, RemoveAxis, Zip};
+use ndarray::{Array1, ArrayBase, Dimension, Zip};
 use ndarray::{Data, DataMut};
 pub use rustfft::num_complex::Complex;
 pub use rustfft::num_traits::Zero;
@@ -74,7 +74,7 @@ macro_rules! create_transform {
             T: FftNum,
             R: Data<Elem = $a>,
             S: Data<Elem = $b> + DataMut,
-            D: Dimension + RemoveAxis,
+            D: Dimension,
         {
             let outer_axis = input.ndim() - 1;
             if axis == outer_axis {
@@ -113,7 +113,7 @@ macro_rules! create_transform_par {
             T: FftNum,
             R: Data<Elem = $a>,
             S: Data<Elem = $b> + DataMut,
-            D: Dimension + RemoveAxis,
+            D: Dimension,
         {
             let outer_axis = input.ndim() - 1;
             if axis == outer_axis {
