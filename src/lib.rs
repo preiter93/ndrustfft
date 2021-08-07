@@ -768,244 +768,338 @@ create_transform_par!(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ndarray::{array, Array1, Array2};
+    use ndarray::{array, Array2};
+
+    fn approx_eq<A, S, D>(result: &ArrayBase<S, D>, expected: &ArrayBase<S, D>)
+    where
+        A: FftNum + std::fmt::Display + std::cmp::PartialOrd,
+        S: ndarray::Data<Elem = A>,
+        D: Dimension,
+    {
+        let dif = A::from_f64(1e-3).unwrap();
+        for (a, b) in expected.iter().zip(result.iter()) {
+            if (*a - *b).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    fn approx_eq_complex<A, S, D>(result: &ArrayBase<S, D>, expected: &ArrayBase<S, D>)
+    where
+        A: FftNum + std::fmt::Display + std::cmp::PartialOrd,
+        S: ndarray::Data<Elem = Complex<A>>,
+        D: Dimension,
+    {
+        let dif = A::from_f64(1e-3).unwrap();
+        for (a, b) in expected.iter().zip(result.iter()) {
+            if (a.re - b.re).abs() > dif || (a.im - b.im).abs() > dif {
+                panic!("Large difference of values, got {} expected {}.", b, a)
+            }
+        }
+    }
+
+    fn test_matrix() -> Array2<f64> {
+        array![
+            [0.1, 1.908, -0.035, -0.278, 0.264, -1.349],
+            [0.88, 0.86, -0.267, -0.809, 1.374, 0.757],
+            [1.418, -0.68, 0.814, 0.852, -0.613, 0.468],
+            [0.817, -0.697, -2.157, 0.447, -0.949, 2.243],
+            [-0.474, -0.09, -0.567, -0.772, 0.021, 2.455],
+            [-0.745, 1.52, 0.509, -0.066, 2.802, -0.042],
+        ]
+    }
+
+    fn test_matrix_complex() -> Array2<Complex<f64>> {
+        test_matrix().mapv(|x| Complex::new(x, x))
+    }
 
     #[test]
-    /// Successive forward and inverse transform
     fn test_fft() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<Complex<f64>>::zeros((nx, ny));
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
-        for (i, v) in data.iter_mut().enumerate() {
-            v.re = i as f64;
-            v.im = -1.0 * i as f64;
-        }
         let mut handler: FftHandler<f64> = FftHandler::new(ny);
-        let expected = data.clone();
-        ndfft(&mut data, &mut vhat, &mut handler, 1);
-        ndifft(&mut vhat, &mut data, &mut handler, 1);
+
+        // Transform
+        ndfft(&mut v, &mut vhat, &mut handler, 1);
+        ndifft(&mut vhat, &mut v, &mut handler, 1);
 
         // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a.re - b.re).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-            if (a.im - b.im).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
+        approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
     }
 
     #[test]
-    /// Forward and backward transform with known solution
-    fn test_fft_r2c1() {
-        let nx = 8;
-        let mut data = Array1::<f64>::zeros(nx);
-        let mut vhat = Array1::<Complex<f64>>::zeros(nx / 2 + 1);
-        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
-        let expected = data.clone();
-        let mut handler: FftHandler<f64> = FftHandler::new(nx);
-        ndfft_r2c(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
-        ndifft_r2c(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
+    fn test_fft_r2c() {
+        // Solution from np.fft.rfft
+        let solution_re = array![
+            [0.61, 0.543, -0.572, 0.048],
+            [2.795, 1.944, -1.291, 1.179],
+            [2.259, 0.36, 2.275, 0.979],
+            [-0.296, 2.696, 2.044, -4.282],
+            [0.573, 1.753, -2.155, -2.613],
+            [3.978, -1.596, -3.205, 1.154],
+        ];
 
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
+        let solution_im = array![
+            [0., -2.562, -3.08, 0.],
+            [0., 1.332, -1.51, 0.],
+            [0., -0.242, 2.23, 0.],
+            [0., 3.592, 1.5, 0.],
+            [0., 2.713, 1.695, 0.],
+            [0., 0.633, -3.339, 0.],
+        ];
 
-        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
-        ndfft_r2c_par(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
-        ndifft_r2c_par(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-    }
-
-    #[test]
-    /// Successive forward and inverse transform
-    fn test_fft_r2c2() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<f64>::zeros((nx, ny));
-        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64 + i.pow(2) as f64;
-        }
-        let mut handler: FftHandler<f64> = FftHandler::new(ny);
-        let expected = data.clone();
-        ndfft_r2c(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
-        ndifft_r2c(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 1);
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-    }
-
-    #[test]
-    /// Forward and backward transform with known solution
-    fn test_fft_r2hc1() {
-        let nx = 8;
-        let mut data = Array1::<f64>::zeros(nx);
-        let mut vhat = Array1::<f64>::zeros(nx);
-        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
-        let expected = data.clone();
-        let mut handler: FftHandler<f64> = FftHandler::new(nx);
-        ndfft_r2hc(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
-        ndifft_r2hc(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-
-        data.assign(&array![0., 0.707, 1., 0.707, 0., -0.707, -1., -0.707]);
-        ndfft_r2hc_par(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 0);
-        ndifft_r2hc_par(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 0);
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-    }
-
-    #[test]
-    /// Successive forward and inverse transform
-    fn test_fft_r2hc2() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<f64>::zeros((nx, ny));
-        let mut vhat = Array2::<f64>::zeros((nx, ny));
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64 + i.pow(2) as f64;
-        }
-        let mut handler: FftHandler<f64> = FftHandler::new(ny);
-        let expected = data.clone();
-        ndfft_r2hc(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
-        ndifft_r2hc(&mut vhat.view_mut(), &mut data.view_mut(), &mut handler, 1);
-
-        // Assert
-        let dif = 1e-6;
-        for (a, b) in expected.iter().zip(data.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
-    }
-
-    #[test]
-    /// Successive forward and inverse transform
-    fn test_fft_r2c_vs_r2hc() {
-        use ndarray::s;
-        // Real-to-complex
-        let nx = 6;
-        let mut data = Array1::<f64>::zeros(nx);
-        let mut vhat_r2c = Array1::<Complex<f64>>::zeros(nx / 2 + 1);
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64;
-        }
-        let mut handler: FftHandler<f64> = FftHandler::new(nx);
-        ndfft_r2c(
-            &mut data.view_mut(),
-            &mut vhat_r2c.view_mut(),
-            &mut handler,
-            0,
-        );
-        // Real-to-real
-        let mut vhat_r2hc = Array1::<f64>::zeros(nx);
-        ndfft_r2hc(
-            &mut data.view_mut(),
-            &mut vhat_r2hc.view_mut(),
-            &mut handler,
-            0,
-        );
-
-        // assert
-        assert!(vhat_r2hc[0] == vhat_r2c[0].re);
-        assert!(vhat_r2hc[nx / 2] == vhat_r2c[nx / 2].re);
-        for (b, d) in vhat_r2c
-            .slice(s![1..nx / 2])
-            .iter()
-            .zip(vhat_r2hc.slice(s![1..nx / 2]).iter())
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
         {
-            assert!(*d == b.re);
+            s.re = *s_re;
+            s.im = *s_im;
         }
-        for (b, d) in vhat_r2c
-            .slice(s![1..nx / 2])
-            .iter()
-            .zip(vhat_r2hc.slice(s![nx / 2 + 1..]).iter().rev())
-        {
-            assert!(*d == b.im);
-        }
-    }
 
-    #[test]
-    /// Successive forward and inverse transform
-    fn test_fft_r2c_serial_vs_parallel() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<f64>::zeros((nx, ny));
+        // Setup
+        let mut v = test_matrix();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
-        let mut vhat_par = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64;
-        }
         let mut handler: FftHandler<f64> = FftHandler::new(ny);
-        ndfft_r2c(&mut data.view_mut(), &mut vhat.view_mut(), &mut handler, 1);
-        ndfft_r2c_par(
-            &mut data.view_mut(),
-            &mut vhat_par.view_mut(),
-            &mut handler,
-            1,
-        );
+
+        // Transform
+        ndfft_r2c(&mut v, &mut vhat, &mut handler, 1);
+        ndifft_r2c(&mut vhat, &mut v, &mut handler, 1);
 
         // Assert
-        let dif = 1e-6;
-        for (a, b) in vhat.iter().zip(vhat_par.iter()) {
-            if (a.re - b.re).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-            if (a.im - b.im).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
-        }
+        approx_eq_complex(&vhat, &solution);
+        approx_eq(&v, &v_copy);
     }
 
     #[test]
-    /// Successive forward and inverse transform
-    fn test_dct_serial_vs_parallel() {
-        let (nx, ny) = (6, 4);
-        let mut data = Array2::<f64>::zeros((nx, ny));
+    fn test_fft_r2hc() {
+        // Solution from np.fft.rfft
+        let solution = array![
+            [0.61, 0.543, -0.572, 0.048, -3.08, -2.562],
+            [2.795, 1.944, -1.291, 1.179, -1.51, 1.332],
+            [2.259, 0.36, 2.275, 0.979, 2.23, -0.242],
+            [-0.296, 2.696, 2.044, -4.282, 1.5, 3.592],
+            [0.573, 1.753, -2.155, -2.613, 1.695, 2.713],
+            [3.978, -1.596, -3.205, 1.154, -3.339, 0.633],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<f64>::zeros((nx, ny));
-        let mut vhat_par = Array2::<f64>::zeros((nx, ny));
-        for (i, v) in data.iter_mut().enumerate() {
-            *v = i as f64;
-        }
-        let mut handler: DctHandler<f64> = DctHandler::new(nx);
-        nddct1(&mut data, &mut vhat, &mut handler, 0);
-        nddct1_par(&mut data, &mut vhat_par, &mut handler, 0);
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft_r2hc(&mut v, &mut vhat, &mut handler, 1);
+        ndifft_r2hc(&mut vhat, &mut v, &mut handler, 1);
 
         // Assert
-        let dif = 1e-6;
-        for (a, b) in vhat.iter().zip(vhat_par.iter()) {
-            if (a - b).abs() > dif {
-                panic!("Large difference of values, got {} expected {}.", b, a)
-            }
+        approx_eq(&vhat, &solution);
+        approx_eq(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_dct1() {
+        // Solution from scipy.fft.dct(x, type=1)
+        let solution = array![
+            [2.469, 4.259, 0.6, 0.04, -4.957, -1.353],
+            [3.953, -0.374, 4.759, -0.436, -2.643, 2.235],
+            [2.632, 0.818, -1.609, 1.053, 5.008, 1.008],
+            [-3.652, -2.628, 4.81, 2.632, 4.666, -7.138],
+            [-0.835, -2.982, 4.105, -3.192, 1.265, -2.297],
+            [8.743, -2.422, 1.167, -0.841, -7.506, 3.011],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
+        nddct1(&mut v, &mut vhat, &mut handler, 1);
+
+        // Assert
+        approx_eq(&vhat, &solution);
+    }
+
+    #[test]
+    fn test_fft_par() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
         }
+
+        // Setup
+        let mut v = test_matrix_complex();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft_par(&mut v, &mut vhat, &mut handler, 1);
+        ndifft_par(&mut vhat, &mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_r2c_par() {
+        // Solution from np.fft.rfft
+        let solution_re = array![
+            [0.61, 0.543, -0.572, 0.048],
+            [2.795, 1.944, -1.291, 1.179],
+            [2.259, 0.36, 2.275, 0.979],
+            [-0.296, 2.696, 2.044, -4.282],
+            [0.573, 1.753, -2.155, -2.613],
+            [3.978, -1.596, -3.205, 1.154],
+        ];
+
+        let solution_im = array![
+            [0., -2.562, -3.08, 0.],
+            [0., 1.332, -1.51, 0.],
+            [0., -0.242, 2.23, 0.],
+            [0., 3.592, 1.5, 0.],
+            [0., 2.713, 1.695, 0.],
+            [0., 0.633, -3.339, 0.],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft_r2c_par(&mut v, &mut vhat, &mut handler, 1);
+        ndifft_r2c_par(&mut vhat, &mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq_complex(&vhat, &solution);
+        approx_eq(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_r2hc_par() {
+        // Solution from np.fft.rfft
+        let solution = array![
+            [0.61, 0.543, -0.572, 0.048, -3.08, -2.562],
+            [2.795, 1.944, -1.291, 1.179, -1.51, 1.332],
+            [2.259, 0.36, 2.275, 0.979, 2.23, -0.242],
+            [-0.296, 2.696, 2.044, -4.282, 1.5, 3.592],
+            [0.573, 1.753, -2.155, -2.613, 1.695, 2.713],
+            [3.978, -1.596, -3.205, 1.154, -3.339, 0.633],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft_r2hc_par(&mut v, &mut vhat, &mut handler, 1);
+        ndifft_r2hc_par(&mut vhat, &mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq(&vhat, &solution);
+        approx_eq(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_dct1_par() {
+        // Solution from scipy.fft.dct(x, type=1)
+        let solution = array![
+            [2.469, 4.259, 0.6, 0.04, -4.957, -1.353],
+            [3.953, -0.374, 4.759, -0.436, -2.643, 2.235],
+            [2.632, 0.818, -1.609, 1.053, 5.008, 1.008],
+            [-3.652, -2.628, 4.81, 2.632, 4.666, -7.138],
+            [-0.835, -2.982, 4.105, -3.192, 1.265, -2.297],
+            [8.743, -2.422, 1.167, -0.841, -7.506, 3.011],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
+        nddct1_par(&mut v, &mut vhat, &mut handler, 1);
+
+        // Assert
+        approx_eq(&vhat, &solution);
     }
 }
