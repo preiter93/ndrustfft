@@ -277,7 +277,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08e854964160a323e65baa19a0b1a027f76d590faba01f05c0cbc3187221a8c9"
 dependencies = [
  "matrixmultiply",
- "num-complex",
+ "num-complex 0.4.0",
  "num-integer",
  "num-traits",
  "rawpointer",
@@ -286,12 +286,23 @@ dependencies = [
 
 [[package]]
 name = "ndrustfft"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "ndarray",
  "num-traits",
- "rustfft",
+ "realfft",
+ "rustdct",
+ "rustfft 6.0.1",
+]
+
+[[package]]
+name = "num-complex"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "747d632c0c558b87dbabbe6a82f3b4ae03720d0646ac5b7b4dae89394be5f2c5"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -434,6 +445,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "realfft"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7695c87f31dc3644760f23fb59a3fed47659703abf76cf2d111f03b9e712342"
+dependencies = [
+ "rustfft 6.0.1",
+]
+
+[[package]]
 name = "regex"
 version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -464,12 +484,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustdct"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fadcb505b98aa64da1dadb1498b912e3642aae4606623cb3ae952cd8da33f80d"
+dependencies = [
+ "rustfft 5.1.1",
+]
+
+[[package]]
+name = "rustfft"
+version = "5.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1869bb2a6ff77380d52ff4bc631f165637035a55855c76aa462c85474dadc42f"
+dependencies = [
+ "num-complex 0.3.1",
+ "num-integer",
+ "num-traits",
+ "primal-check",
+ "strength_reduce",
+ "transpose",
+]
+
+[[package]]
 name = "rustfft"
 version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1d089e5c57521629a59f5f39bca7434849ff89bd6873b521afe389c1c602543"
 dependencies = [
- "num-complex",
+ "num-complex 0.4.0",
  "num-integer",
  "num-traits",
  "primal-check",
