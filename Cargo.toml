@@ -1,11 +1,11 @@
 [package]
 name = "ndrustfft"
-version = "0.1.6"
+version = "0.2.0"
 authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
-description = "N-dimensional real-to-complex FFT and real-to-real DCT for Rust"
+description = "N-dimensional c2c FFT, r2c FFT and r2r DCT for Rust"
 repository = "https://github.com/preiter93/ndrustfft"
-keywords = ["fft", "dft", "dct", "rustfft", "ndarray"]
+keywords = ["fft", "dft", "dct", "rustfft", "realfft", "rustdct", "ndarray"]
 readme = "README.md"
 license = "MIT"
 
@@ -15,8 +15,10 @@ path = "src/lib.rs"
 
 [dependencies]
 ndarray = { version = "0.15.0", features = ["rayon"] }
-rustfft = "6.0.1"
+rustfft = "6.0"
 num-traits = "0.2.12"
+rustdct = "0.6"
+realfft = "2.0.1"
 
 [dev-dependencies]
 criterion = { version = "0.3.4", features = ["html_reports"] }
