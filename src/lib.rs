@@ -102,7 +102,6 @@ macro_rules! create_transform {
                         handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
                         y.assign(&outvec);
                     });
-                input.swap_axes(outer_axis, axis);
                 output.swap_axes(outer_axis, axis);
             }
         }
@@ -143,7 +142,6 @@ macro_rules! create_transform_par {
                         handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
                         y.assign(&outvec);
                     });
-                input.swap_axes(outer_axis, axis);
                 output.swap_axes(outer_axis, axis);
             }
         }
