@@ -43,7 +43,7 @@
 //! }
 //! let mut fft_handler = R2cFftHandler::<f64>::new(nx);
 //! ndfft_r2c(
-//!     &mut data.view_mut(),
+//!     &data.view(),
 //!     &mut vhat.view_mut(),
 //!     &mut fft_handler,
 //!     0,
@@ -74,7 +74,7 @@ macro_rules! create_transform {
     ) => {
         $(#[$meta])*
         pub fn $i<R, S, T, D>(
-            input: &mut ArrayBase<R, D>,
+            input: &ArrayBase<R, D>,
             output: &mut ArrayBase<S, D>,
             handler: &mut $h,
             axis: usize,
@@ -93,6 +93,7 @@ macro_rules! create_transform {
                     });
             } else {
                 let mut outvec = Array1::zeros(output.shape()[axis]);
+                let mut input = input.view();
                 input.swap_axes(outer_axis, axis);
                 output.swap_axes(outer_axis, axis);
                 Zip::from(input.rows())
@@ -113,7 +114,7 @@ macro_rules! create_transform_par {
     ($(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
         $(#[$meta])*
         pub fn $i<R, S, T, D>(
-            input: &mut ArrayBase<R, D>,
+            input: &ArrayBase<R, D>,
             output: &mut ArrayBase<S, D>,
             handler: &mut $h,
             axis: usize,
@@ -132,6 +133,7 @@ macro_rules! create_transform_par {
                     });
             } else {
                 let n = output.shape()[axis];
+                let mut input = input.view();
                 input.swap_axes(outer_axis, axis);
                 output.swap_axes(outer_axis, axis);
                 Zip::from(input.rows())
@@ -175,7 +177,7 @@ macro_rules! create_transform_par {
 ///     v.im = i as f64;
 /// }
 /// let mut fft_handler: FftHandler<f64> = FftHandler::new(nx);
-/// ndfft(&mut data, &mut vhat, &mut fft_handler, 0);
+/// ndfft(&data, &mut vhat, &mut fft_handler, 0);
 /// ```
 #[derive(Clone)]
 pub struct FftHandler<T> {
@@ -265,7 +267,7 @@ create_transform!(
     ///     v.im = -1.0*i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(ny);
-    /// ndfft(&mut data, &mut vhat, &mut handler, 1);
+    /// ndfft(&data, &mut vhat, &mut handler, 1);
     /// ```
     ndfft,
     Complex<T>,
@@ -289,8 +291,8 @@ create_transform!(
     ///     v.im = -1.0*i as f64;
     /// }
     /// let mut handler: FftHandler<f64> = FftHandler::new(ny);
-    /// ndfft(&mut data, &mut vhat, &mut handler, 1);
-    /// ndifft(&mut vhat, &mut data, &mut handler, 1);
+    /// ndfft(&data, &mut vhat, &mut handler, 1);
+    /// ndifft(&vhat, &mut data, &mut handler, 1);
     /// ```
     ndifft,
     Complex<T>,
@@ -369,7 +371,7 @@ create_transform_par!(
 ///     *v = i as f64;
 /// }
 /// let mut fft_handler = R2cFftHandler::<f64>::new(nx);
-/// ndfft_r2c(&mut data, &mut vhat, &mut fft_handler, 0);
+/// ndfft_r2c(&data, &mut vhat, &mut fft_handler, 0);
 /// ```
 #[derive(Clone)]
 pub struct R2cFftHandler<T> {
@@ -455,7 +457,7 @@ create_transform!(
     ///     *v = i as f64;
     /// }
     /// let mut handler = R2cFftHandler::<f64>::new(nx);
-    /// ndfft_r2c(&mut data, &mut vhat, &mut handler, 0);
+    /// ndfft_r2c(&data, &mut vhat, &mut handler, 0);
     /// ```
     ndfft_r2c,
     T,
@@ -478,7 +480,7 @@ create_transform!(
     ///     v.re = i as f64;
     /// }
     /// let mut handler = R2cFftHandler::<f64>::new(nx);
-    /// ndifft_r2c(&mut vhat, &mut data, &mut handler, 0);
+    /// ndifft_r2c(&vhat, &mut data, &mut handler, 0);
     /// ```
     ndifft_r2c,
     Complex<T>,
@@ -534,7 +536,7 @@ create_transform_par!(
 ///     *v = i as f64;
 /// }
 /// let mut handler: DctHandler<f64> = DctHandler::new(ny);
-/// nddct1(&mut data, &mut vhat, &mut handler, 1);
+/// nddct1(&data, &mut vhat, &mut handler, 1);
 /// ```
 #[derive(Clone)]
 pub struct DctHandler<T> {
@@ -640,7 +642,7 @@ create_transform!(
     ///     *v = i as f64;
     /// }
     /// let mut handler: DctHandler<f64> = DctHandler::new(ny);
-    /// nddct1(&mut data, &mut vhat, &mut handler, 1);
+    /// nddct1(&data, &mut vhat, &mut handler, 1);
     /// ```
     nddct1,
     T,
@@ -801,8 +803,8 @@ mod test {
         let mut handler: FftHandler<f64> = FftHandler::new(ny);
 
         // Transform
-        ndfft(&mut v, &mut vhat, &mut handler, 1);
-        ndifft(&mut vhat, &mut v, &mut handler, 1);
+        ndfft(&v, &mut vhat, &mut handler, 1);
+        ndifft(&vhat, &mut v, &mut handler, 1);
 
         // Assert
         approx_eq_complex(&vhat, &solution);
@@ -810,8 +812,8 @@ mod test {
 
         // Transform Par
         let mut v = test_matrix_complex();
-        ndfft_par(&mut v, &mut vhat, &mut handler, 1);
-        ndifft_par(&mut vhat, &mut v, &mut handler, 1);
+        ndfft_par(&v, &mut vhat, &mut handler, 1);
+        ndifft_par(&vhat, &mut v, &mut handler, 1);
 
         // Assert
         approx_eq_complex(&vhat, &solution);
@@ -856,8 +858,8 @@ mod test {
         let mut handler = R2cFftHandler::<f64>::new(ny);
 
         // Transform
-        ndfft_r2c(&mut v, &mut vhat, &mut handler, 1);
-        ndifft_r2c(&mut vhat, &mut v, &mut handler, 1);
+        ndfft_r2c(&v, &mut vhat, &mut handler, 1);
+        ndifft_r2c(&vhat, &mut v, &mut handler, 1);
 
         // Assert
         approx_eq_complex(&vhat, &solution);
@@ -865,8 +867,8 @@ mod test {
 
         // Transform Par
         let mut v = test_matrix();
-        ndfft_r2c_par(&mut v, &mut vhat, &mut handler, 1);
-        ndifft_r2c_par(&mut vhat, &mut v, &mut handler, 1);
+        ndfft_r2c_par(&v, &mut vhat, &mut handler, 1);
+        ndifft_r2c_par(&vhat, &mut v, &mut handler, 1);
 
         // // Assert
         approx_eq_complex(&vhat, &solution);
@@ -886,20 +888,20 @@ mod test {
         ];
 
         // Setup
-        let mut v = test_matrix();
+        let v = test_matrix();
         let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<f64>::zeros((nx, ny));
         let mut handler: DctHandler<f64> = DctHandler::new(ny);
 
         // Transform
-        nddct1(&mut v, &mut vhat, &mut handler, 1);
+        nddct1(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
 
         // Transform Par
-        let mut v = test_matrix();
-        nddct1_par(&mut v, &mut vhat, &mut handler, 1);
+        let v = test_matrix();
+        nddct1_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
@@ -918,20 +920,20 @@ mod test {
         ];
 
         // Setup
-        let mut v = test_matrix();
+        let v = test_matrix();
         let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<f64>::zeros((nx, ny));
         let mut handler: DctHandler<f64> = DctHandler::new(ny);
 
         // Transform
-        nddct2(&mut v, &mut vhat, &mut handler, 1);
+        nddct2(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
 
         // Transform Par
-        let mut v = test_matrix();
-        nddct2_par(&mut v, &mut vhat, &mut handler, 1);
+        let v = test_matrix();
+        nddct2_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
@@ -950,20 +952,20 @@ mod test {
         ];
 
         // Setup
-        let mut v = test_matrix();
+        let v = test_matrix();
         let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<f64>::zeros((nx, ny));
         let mut handler: DctHandler<f64> = DctHandler::new(ny);
 
         // Transform
-        nddct3(&mut v, &mut vhat, &mut handler, 1);
+        nddct3(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
 
         // Transform Par
-        let mut v = test_matrix();
-        nddct3_par(&mut v, &mut vhat, &mut handler, 1);
+        let v = test_matrix();
+        nddct3_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
@@ -982,20 +984,20 @@ mod test {
         ];
 
         // Setup
-        let mut v = test_matrix();
+        let v = test_matrix();
         let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<f64>::zeros((nx, ny));
         let mut handler: DctHandler<f64> = DctHandler::new(ny);
 
         // Transform
-        nddct4(&mut v, &mut vhat, &mut handler, 1);
+        nddct4(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
 
         // Transform Par
-        let mut v = test_matrix();
-        nddct4_par(&mut v, &mut vhat, &mut handler, 1);
+        let v = test_matrix();
+        nddct4_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
         approx_eq(&vhat, &solution);
