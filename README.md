@@ -45,7 +45,7 @@ for (i, v) in data.iter_mut().enumerate() {
 }
 let mut fft_handler = R2cFftHandler::<f64>::new(nx);
 ndfft_r2c(
-    &mut data.view_mut(),
+    &data.view(),
     &mut vhat.view_mut(),
     &mut fft_handler,
     0,
