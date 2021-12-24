@@ -27,6 +27,15 @@ other axis' will create temporary copies of the input array.
 - `dct3`: [`nddct3`],[`nddct3_par`]
 - `dct4`: [`nddct4`],[`nddct4_par`]
 
+`ndrustfft` >= v0.2.2:
+
+Real-to-complex transforms now behave like numpys rfft.
+The first element (for odd and even input) and the last element (for even input)
+of the coefficient array should be real due to Hermitian symmetry.
+Thus, the solution of the inverse transform is independent of the imaginary
+part of the first and last element (for even input). Note, this is different
+to the behaviour of the `RealFft` crate.
+
 ### Parallel
 The library ships all functions with a parallel version
 which leverages the parallel abilities of ndarray.

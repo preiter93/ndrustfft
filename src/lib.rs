@@ -25,6 +25,15 @@
 //! - `dct3`: [`nddct3`],[`nddct3_par`]
 //! - `dct4`: [`nddct4`],[`nddct4_par`]
 //!
+//! `ndrustfft` >= v0.2.2:
+//!
+//! Real-to-complex transforms now behave like numpys rfft.
+//! The first element (for odd and even input) and the last element (for even input)
+//! of the coefficient array should be real due to Hermitian symmetry.
+//! Thus, the solution of the inverse transform is independent of the imaginary
+//! part of the first and last element (for even input). Note, this is different
+//! to the behaviour of the `RealFft` crate.
+//!
 //! ## Parallel
 //! The library ships all functions with a parallel version
 //! which leverages the parallel abilities of ndarray.
@@ -427,6 +436,12 @@ impl<T: FftNum> R2cFftHandler<T> {
         for (a, b) in indata.iter_mut().zip(data.iter()) {
             a.re = b.re * n64;
             a.im = b.im * n64;
+        }
+        // First element must be real
+        indata[0].im = T::zero();
+        // If original vector is even, last element must be real
+        if self.n % 2 == 0 {
+            indata[self.m - 1].im = T::zero();
         }
         self.plan_bwd.process(&mut indata, out).unwrap();
     }
@@ -871,6 +886,40 @@ mod test {
         // // Assert
         approx_eq_complex(&vhat, &solution);
         approx_eq(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_ifft_c2r_first_last_element() {
+        let n = 6;
+        let mut v = Array1::<f64>::zeros(n);
+        let mut vhat = Array1::<Complex<f64>>::zeros(n / 2 + 1);
+        let solution_numpy_first_elem: Array1<f64> =
+            array![0.16667, 0.16667, 0.16667, 0.16667, 0.16667, 0.16667];
+        let solution_numpy_last_elem: Array1<f64> =
+            array![0.16667, -0.16667, 0.16667, -0.16667, 0.16667, -0.16667];
+        let mut rfft_handler = R2cFftHandler::<f64>::new(n);
+
+        // First element should be purely real, thus the imaginary
+        // part should not matter. However, original realfft gives
+        // different results for different imaginary parts
+        vhat[0].re = 1.;
+        vhat[0].im = 100.;
+        // backward
+        ndifft_r2c(&vhat, &mut v, &mut rfft_handler, 0);
+        // assert
+        approx_eq(&v, &solution_numpy_first_elem);
+
+        // Same for last element, if input is even
+        for v in vhat.iter_mut() {
+            v.re = 0.;
+            v.im = 0.;
+        }
+        vhat[3].re = 1.;
+        vhat[3].im = 100.;
+        // backward
+        ndifft_r2c(&vhat, &mut v, &mut rfft_handler, 0);
+        // assert
+        approx_eq(&v, &solution_numpy_last_elem);
     }
 
     #[test]
