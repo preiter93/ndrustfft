@@ -5,13 +5,17 @@
 //! data on *n*-dimensional arrays (ndarray).
 //!
 //! ndrustfft provides Handler structs for FFT's and DCTs, which must be provided alongside
-//! with the arrays to the respective function (see below) .
+//! with the arrays to the respective functions (see below) .
 //! The Handlers implement a process function, which is a wrapper around Rustfft's
-//! process function with additional functionality.
+//! process.
 //! Transforms along the outermost axis are in general the fastest, while transforms along
-//! other axis' will create temporary copies of the input array.
+//! other axis' will temporarily create copies of the input array.
 //!
-//! ## Implemented transforms
+//! ## Parallel
+//! The library ships all functions with a parallel version
+//! which leverages the parallel iterators of the ndarray crate.
+//!
+//! ## Available transforms
 //! ### Complex-to-complex
 //! - `fft` : [`ndfft`], [`ndfft_par`]
 //! - `ifft`: [`ndifft`],[`ndifft_par`]
@@ -24,19 +28,6 @@
 //! - `dct2`: [`nddct2`],[`nddct2_par`]
 //! - `dct3`: [`nddct3`],[`nddct3_par`]
 //! - `dct4`: [`nddct4`],[`nddct4_par`]
-//!
-//! `ndrustfft` >= v0.2.2:
-//!
-//! Real-to-complex transforms now behave like numpys rfft.
-//! The first element (for odd and even input) and the last element (for even input)
-//! of the coefficient array should be real due to Hermitian symmetry.
-//! Thus, the solution of the inverse transform is independent of the imaginary
-//! part of the first and last element (for even input). Note, this is different
-//! to the behaviour of the `RealFft` crate.
-//!
-//! ## Parallel
-//! The library ships all functions with a parallel version
-//! which leverages the parallel abilities of ndarray.
 //!
 //! ## Example
 //! 2-Dimensional real-to-complex fft along first axis
@@ -58,8 +49,16 @@
 //!     0,
 //! );
 //! ```
+//!
+//! # Versions
+//! - v0.3.0: Upgrade `RealFft` to 3.0.0 and `RustDCT` to 0.7
+//! - \>= v0.2.2:
+//!
+//! The first and last elements of real-to-complex transforms are
+//! per definition purely real. This is now enforced actively, by
+//! setting the complex part to zero - similar to numpys rfft.
 #![warn(missing_docs)]
-#![warn(missing_doc_code_examples)]
+#![warn(rustdoc::missing_doc_code_examples)]
 extern crate ndarray;
 extern crate rustfft;
 use ndarray::{Array1, ArrayBase, Dimension, Zip};
@@ -117,7 +116,7 @@ macro_rules! create_transform {
     };
 }
 
-/// Similar to create_transform, but supports parallel computation.
+/// Similar to ``create_transform``, but supports parallel computation.
 macro_rules! create_transform_par {
     ($(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
         $(#[$meta])*
@@ -189,10 +188,8 @@ macro_rules! create_transform_par {
 #[derive(Clone)]
 pub struct FftHandler<T> {
     n: usize,
-    m: usize,
     plan_fwd: Arc<dyn Fft<T>>,
     plan_bwd: Arc<dyn Fft<T>>,
-    buffer: Vec<Complex<T>>,
 }
 
 impl<T: FftNum> FftHandler<T> {
@@ -216,13 +213,10 @@ impl<T: FftNum> FftHandler<T> {
         let mut planner = FftPlanner::<T>::new();
         let fwd = planner.plan_fft_forward(n);
         let bwd = planner.plan_fft_inverse(n);
-        let buffer = vec![Complex::zero(); n];
         FftHandler::<T> {
             n,
-            m: n / 2 + 1,
             plan_fwd: Arc::clone(&fwd),
             plan_bwd: Arc::clone(&bwd),
-            buffer,
         }
     }
 
