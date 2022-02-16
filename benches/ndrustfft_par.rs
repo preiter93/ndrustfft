@@ -3,12 +3,12 @@ use ndarray::{Array, Dim, Ix};
 use ndrustfft::{nddct1_par, DctHandler};
 use ndrustfft::{ndfft_par, Complex, FftHandler};
 use ndrustfft::{ndfft_r2c_par, R2cFftHandler};
-
-const SIZES: [usize; 4] = [128, 264, 512, 1024];
+const FFT_SIZES: [usize; 4] = [128, 264, 512, 1024];
+const DCT_SIZES: [usize; 4] = [129, 265, 513, 1025];
 
 pub fn bench_fft2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("fft2d_par");
-    for n in SIZES.iter() {
+    for n in FFT_SIZES.iter() {
         let name = format!("Size: {}", *n);
         let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((*n, *n));
         let mut vhat = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((*n, *n));
@@ -26,7 +26,7 @@ pub fn bench_fft2d(c: &mut Criterion) {
 
 pub fn bench_rfft2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("rfft2d_par");
-    for n in SIZES.iter() {
+    for n in FFT_SIZES.iter() {
         let name = format!("Size: {}", *n);
         let m = *n / 2 + 1;
         let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((*n, *n));
@@ -44,7 +44,7 @@ pub fn bench_rfft2d(c: &mut Criterion) {
 
 pub fn bench_dct2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("dct2d_par");
-    for n in SIZES.iter() {
+    for n in DCT_SIZES.iter() {
         let name = format!("Size: {}", *n);
         let mut data = Array::<f64, Dim<[Ix; 2]>>::zeros((*n, *n));
         let mut vhat = Array::<f64, Dim<[Ix; 2]>>::zeros((*n, *n));
