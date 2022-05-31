@@ -24,6 +24,7 @@
 //! ### Complex-to-real
 //! - `ifft_r2c`: [`ndifft_r2c`],[`ndifft_r2c_par`]
 //! ### Real-to-real
+//! *Discrete Cosine Transform*
 //! - `dct1`: [`nddct1`],[`nddct1_par`]
 //! - `dct2`: [`nddct2`],[`nddct2_par`]
 //! - `dct3`: [`nddct3`],[`nddct3_par`]
@@ -594,6 +595,26 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         self.plan_dct1.process_dct1(out);
     }
 
+    fn dct1_ortho_lane(&self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self, data.len());
+        Self::assert_size(self, out.len());
+        let n = out.len();
+        let two = T::one() + T::one();
+        for (b, d) in out.iter_mut().zip(data.iter()) {
+            *b = *d * two;
+        }
+        // Normalize
+        out[0] = out[0] * T::SQRT_2();
+        out[n - 1] = out[n - 1] * T::SQRT_2();
+        self.plan_dct1.process_dct1(out);
+        let f = T::one() / two * T::from_f64((2. / (n - 1) as f64).sqrt()).unwrap();
+        for x in out[1..n - 1].iter_mut() {
+            *x = *x * f;
+        }
+        out[0] = out[0] * f / T::SQRT_2();
+        out[n - 1] = out[n - 1] * f / T::SQRT_2();
+    }
+
     fn dct2_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
@@ -602,6 +623,22 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
             *b = *d * two;
         }
         self.plan_dct2.process_dct2(out);
+    }
+
+    fn dct2_ortho_lane(&self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self, data.len());
+        Self::assert_size(self, out.len());
+        let n = out.len();
+        let two = T::one() + T::one();
+        for (b, d) in out.iter_mut().zip(data.iter()) {
+            *b = *d * two;
+        }
+        self.plan_dct2.process_dct2(out);
+        let f = T::from_f64((1. / (2 * n) as f64).sqrt()).unwrap();
+        for x in out[1..].iter_mut() {
+            *x = *x * f;
+        }
+        out[0] = out[0] * f / T::SQRT_2();
     }
 
     fn dct3_lane(&self, data: &[T], out: &mut [T]) {
@@ -614,6 +651,18 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         self.plan_dct3.process_dct3(out);
     }
 
+    fn dct3_ortho_lane(&self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self, data.len());
+        Self::assert_size(self, out.len());
+        let n = out.len();
+        let f = T::SQRT_2() / T::from_f64((n as f64).sqrt()).unwrap();
+        for (b, d) in out.iter_mut().zip(data.iter()) {
+            *b = *d * f;
+        }
+        out[0] = out[0] * T::SQRT_2();
+        self.plan_dct3.process_dct3(out);
+    }
+
     fn dct4_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
@@ -622,6 +671,21 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
             *b = *d * two;
         }
         self.plan_dct4.process_dct4(out);
+    }
+
+    fn dct4_ortho_lane(&self, data: &[T], out: &mut [T]) {
+        Self::assert_size(self, data.len());
+        Self::assert_size(self, out.len());
+        let n = out.len();
+        let two = T::one() + T::one();
+        for (b, d) in out.iter_mut().zip(data.iter()) {
+            *b = *d * two;
+        }
+        self.plan_dct4.process_dct4(out);
+        let f = T::from_f64((1. / (2 * n) as f64).sqrt()).unwrap();
+        for x in out.iter_mut() {
+            *x = *x * f;
+        }
     }
 
     fn assert_size(&self, size: usize) {
@@ -636,6 +700,15 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
 
 create_transform!(
     /// Real-to-real Discrete Cosine Transform of type 1 DCT-I (serial).
+    ///
+    /// # Definition
+    /// $
+    /// y_k = x_0 + (-1)^k x_{N-1} + 2 \sum_{n=1}^{N-2} x_n \cos\left(
+    /// \frac{\pi k n}{N-1} \right)
+    /// $
+    ///
+    /// see also *Pythons* *scipy* library (``norm=None``). To replicate
+    /// ``norm=None`` use [`nddct1_ortho`].
     ///
     /// # Example
     /// ```
@@ -671,6 +744,14 @@ create_transform_par!(
 
 create_transform!(
     /// Real-to-real Discrete Cosine Transform of type 2 DCT-2 (serial).
+    ///
+    /// # Definition
+    /// $
+    /// y_k = 2 \sum_{n=0}^{N-1} x_n \cos\left(\frac{\pi k(2n+1)}{2N} \right)
+    /// $
+    ///
+    /// see also *Pythons* *scipy* library (``norm=None``). To replicate
+    /// ``norm=None`` use [`nddct2_ortho`].
     nddct2,
     T,
     T,
@@ -689,6 +770,14 @@ create_transform_par!(
 
 create_transform!(
     /// Real-to-real Discrete Cosine Transform of type 3 DCT-3 (serial).
+    ///
+    /// # Definition
+    /// $
+    /// y_k = x_0 + 2 \sum_{n=1}^{N-1} x_n \cos\left(\frac{\pi(2k+1)n}{2N}\right)
+    /// $
+    ///
+    /// see also *Pythons* *scipy* library (``norm=None``). To replicate
+    /// ``norm=None`` use [`nddct3_ortho`].
     nddct3,
     T,
     T,
@@ -707,6 +796,14 @@ create_transform_par!(
 
 create_transform!(
     /// Real-to-real Discrete Cosine Transform of type 4 DCT-4 (serial).
+    ///
+    /// # Definition
+    /// $
+    /// y_k = 2 \sum_{n=0}^{N-1} x_n \cos\left(\frac{\pi(2k+1)(2n+1)}{4N} \right)
+    /// $
+    ///
+    /// see also *Pythons* *scipy* library (``norm=None``). To replicate
+    /// ``norm=None`` use [`nddct4_ortho`].
     nddct4,
     T,
     T,
@@ -721,6 +818,158 @@ create_transform_par!(
     T,
     DctHandler<T>,
     dct4_lane
+);
+
+create_transform!(
+    /// Real-to-real Discrete Cosine Transform of type 1 DCT-1 (serial).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    ///
+    /// # Definition
+    /// $
+    /// y_k = x_0 + (-1)^k x_{N-1} + 2 \sum_{n=1}^{N-2} x_n \cos\left(
+    /// \frac{\pi k n}{N-1} \right)
+    /// $
+    ///
+    /// ``x[0]`` and ``x[N-1]`` are multiplied by a scaling
+    /// factor of $\sqrt{2}$, and ``y[k]`` is multiplied by a scaling factor
+    /// ``f``:
+    ///
+    /// $
+    ///     f = \begin{cases}
+    ///     \frac{1}{2}\sqrt{\frac{1}{N-1}} & \text{if }k=0\text{ or }N-1, \\
+    ///     \frac{1}{2}\sqrt{\frac{2}{N-1}} & \text{otherwise} \end{cases}
+    /// $
+    ///
+    /// See also *Pythons* *scipy* library (``norm=ortho``).
+    nddct1_ortho,
+    T,
+    T,
+    DctHandler<T>,
+    dct1_ortho_lane
+);
+
+create_transform_par!(
+    /// Real-to-real Discrete Cosine Transform of type 1 DCT-1  (parallel).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    nddct1_ortho_par,
+    T,
+    T,
+    DctHandler<T>,
+    dct1_ortho_lane
+);
+
+create_transform!(
+    /// Real-to-real Discrete Cosine Transform of type 2 DCT-2 (serial).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    ///
+    /// # Definition
+    /// $
+    /// y_k = 2 \sum_{n=0}^{N-1} x_n \cos\left(\frac{\pi k(2n+1)}{2N} \right)
+    /// $
+    ///
+    /// ``y[k]`` is multiplied by a scaling factor
+    /// ``f``:
+    ///
+    /// $
+    ///     f = \begin{cases}
+    ///   \sqrt{\frac{1}{4N}} & \text{if }k=0, \\
+    ///   \sqrt{\frac{1}{2N}} & \text{otherwise} \end{cases}
+    /// $
+    ///
+    /// See also *Pythons* *scipy* library (``norm=ortho``).
+    nddct2_ortho,
+    T,
+    T,
+    DctHandler<T>,
+    dct2_ortho_lane
+);
+
+create_transform_par!(
+    /// Real-to-real Discrete Cosine Transform of type 2 DCT-2  (parallel).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    nddct2_ortho_par,
+    T,
+    T,
+    DctHandler<T>,
+    dct2_ortho_lane
+);
+
+create_transform!(
+    /// Real-to-real Discrete Cosine Transform of type 3 DCT-3 (serial).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    ///
+    /// # Definition
+    /// $
+    /// y_k = \frac{x_0}{\sqrt{N}} + \sqrt{\frac{2}{N}} \sum_{n=1}^{N-1} x_n
+    ///   \cos\left(\frac{\pi(2k+1)n}{2N}\right)
+    /// $
+    ///
+    /// See also *Pythons* *scipy* library (``norm=ortho``).
+    nddct3_ortho,
+    T,
+    T,
+    DctHandler<T>,
+    dct3_ortho_lane
+);
+
+create_transform_par!(
+    /// Real-to-real Discrete Cosine Transform of type 3 DCT-3  (parallel).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    nddct3_ortho_par,
+    T,
+    T,
+    DctHandler<T>,
+    dct3_ortho_lane
+);
+
+create_transform!(
+    /// Real-to-real Discrete Cosine Transform of type 4 DCT-4 (serial).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    ///
+    /// # Definition
+    /// $
+    /// y_k = 2 \sum_{n=0}^{N-1} x_n \cos\left(\frac{\pi(2k+1)(2n+1)}{4N} \right)
+    /// $
+    ///
+    /// ``y[k]`` is multiplied by a scaling factor
+    /// ``f``:
+    ///
+    /// $
+    ///     f = \frac{1}{\sqrt{2N}}
+    /// $
+    ///
+    /// See also *Pythons* *scipy* library (``norm=ortho``).
+    nddct4_ortho,
+    T,
+    T,
+    DctHandler<T>,
+    dct4_ortho_lane
+);
+
+create_transform_par!(
+    /// Real-to-real Discrete Cosine Transform of type 4 DCT-4  (parallel).
+    ///
+    /// Normalization mode: "ortho", i.e. equal to *Matlabs* ``dct(x)``,
+    /// see *scipys* documentation
+    nddct4_ortho_par,
+    T,
+    T,
+    DctHandler<T>,
+    dct4_ortho_lane
 );
 
 /// Tests
@@ -914,6 +1163,110 @@ mod test {
         ndifft_r2c(&vhat, &mut v, &mut rfft_handler, 0);
         // assert
         approx_eq(&v, &solution_numpy_last_elem);
+    }
+
+    #[test]
+    fn test_dct1_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct1(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![24., -6.82842712, 0., -1.17157288, 0.];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct1_ortho_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct1_ortho(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![6.62132034, -3., 0.87867966, -1., 0.62132034];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct2_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct2(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![30., -9.95959314, 0., -0.898055953, 0.];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct2_ortho_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct2_ortho(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![6.70820393, -3.14949989, 0., -0.28399023, 0.];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct3_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct3(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![17.45077999, -14.20158303, 5., -3.68696079, 0.43776383];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct3_ortho_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct3_ortho(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![5.649407, -4.35994905, 1.71212466, -1.03493354, 0.26941891];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct4_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct4(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![14.97831211, -14.2763015, 7.07106781, -6.4587212, 5.48837883];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn test_dct4_ortho_lane() {
+        let mut handler: DctHandler<f64> = DctHandler::new(5);
+        let x = array![1., 2., 3., 4., 5.];
+        let mut y = Array1::zeros(5);
+        nddct4_ortho(&x, &mut y, &mut handler, 0);
+        // Assert
+        let scipy_dct = vec![4.73655818, -4.51456293, 2.23606798, -2.04242698, 1.73557778];
+        for (a, b) in y.iter().zip(scipy_dct.iter()) {
+            assert!((*a - *b).abs() < 1e-4);
+        }
     }
 
     #[test]
