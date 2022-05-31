@@ -26,6 +26,7 @@ which leverages the parallel iterators of the ndarray crate.
 #### Complex-to-real
 - `ifft_r2c`: [`ndifft_r2c`],[`ndifft_r2c_par`]
 #### Real-to-real
+*Discrete Cosine Transform*
 - `dct1`: [`nddct1`],[`nddct1_par`]
 - `dct2`: [`nddct2`],[`nddct2_par`]
 - `dct3`: [`nddct3`],[`nddct3_par`]
