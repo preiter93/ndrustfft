@@ -1,6 +1,6 @@
 [package]
 name = "ndrustfft"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
 description = "N-dimensional FFT, real-to-complex FFT and real-to-real DCT"

@@ -72,6 +72,17 @@ pub use rustfft::FftNum;
 use rustfft::{Fft, FftPlanner};
 use std::sync::Arc;
 
+/// Normalize spectrum
+#[derive(Clone)]
+pub enum Normalization<T> {
+    /// No normalization applied, output equals `rustfft`, `realfft` or `rustdct`
+    None,
+    /// Apply normalization as numpy (default)
+    Numpy,
+    /// Apply custom normalization
+    Custom(fn(&mut [T])),
+}
+
 /// Declare procedural macro which creates functions for the individual
 /// transforms, i.e. fft, ifft and dct.
 /// The fft/dct transforms are applied for each vector-lane along the
@@ -190,6 +201,7 @@ pub struct FftHandler<T> {
     n: usize,
     plan_fwd: Arc<dyn Fft<T>>,
     plan_bwd: Arc<dyn Fft<T>>,
+    norm: Normalization<Complex<T>>,
 }
 
 impl<T: FftNum> FftHandler<T> {
@@ -217,15 +229,21 @@ impl<T: FftNum> FftHandler<T> {
             n,
             plan_fwd: Arc::clone(&fwd),
             plan_bwd: Arc::clone(&bwd),
+            norm: Normalization::Numpy,
         }
+    }
+
+    /// Change normalization
+    #[must_use]
+    pub fn normalization(mut self, norm: Normalization<Complex<T>>) -> Self {
+        self.norm = norm;
+        self
     }
 
     fn fft_lane(&self, data: &[Complex<T>], out: &mut [Complex<T>]) {
         Self::assert_size(self.n, data.len());
         Self::assert_size(self.n, out.len());
-        for (b, d) in out.iter_mut().zip(data.iter()) {
-            *b = *d;
-        }
+        out.clone_from_slice(data);
         self.plan_fwd.process(out);
     }
 
@@ -233,13 +251,19 @@ impl<T: FftNum> FftHandler<T> {
     fn ifft_lane(&self, data: &[Complex<T>], out: &mut [Complex<T>]) {
         Self::assert_size(self.n, data.len());
         Self::assert_size(self.n, out.len());
-        for (b, d) in out.iter_mut().zip(data.iter()) {
-            *b = *d;
-        }
+        out.clone_from_slice(data);
         self.plan_bwd.process(out);
-        let n64 = T::from_f64(1. / self.n as f64).unwrap();
-        for b in out.iter_mut() {
-            *b = *b * n64;
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Custom(f) => f(out),
+        }
+    }
+
+    fn norm_numpy(data: &mut [Complex<T>]) {
+        let n = T::one() / T::from_usize(data.len()).unwrap();
+        for d in data.iter_mut() {
+            *d = *d * n;
         }
     }
 
@@ -324,28 +348,6 @@ create_transform_par!(
     ifft_lane
 );
 
-// create_transform_par!(
-//     /// Real-to-complex Fourier Transform (parallel).
-//     ///
-//     /// Further infos: see [`ndfft_r2c`]
-//     ndfft_r2c_par,
-//     T,
-//     Complex<T>,
-//     FftHandler<T>,
-//     fft_r2c_lane_par
-// );
-
-// create_transform_par!(
-//     /// Complex-to-real inverse Fourier Transform (parallel).
-//     ///
-//     /// Further infos: see [`ndifft_r2c`]
-//     ndifft_r2c_par,
-//     Complex<T>,
-//     T,
-//     FftHandler<T>,
-//     ifft_r2c_lane_par
-// );
-
 /// # *n*-dimensional real-to-complex Fourier Transform.
 ///
 /// Transforms a real ndarray of size *n* to a complex array of size
@@ -380,6 +382,7 @@ pub struct R2cFftHandler<T> {
     m: usize,
     plan_fwd: Arc<dyn RealToComplex<T>>,
     plan_bwd: Arc<dyn ComplexToReal<T>>,
+    norm: Normalization<Complex<T>>,
 }
 
 impl<T: FftNum> R2cFftHandler<T> {
@@ -408,36 +411,51 @@ impl<T: FftNum> R2cFftHandler<T> {
             m: n / 2 + 1,
             plan_fwd: Arc::clone(&fwd),
             plan_bwd: Arc::clone(&bwd),
+            norm: Normalization::Numpy,
         }
+    }
+
+    /// Change normalization
+    #[must_use]
+    pub fn normalization(mut self, norm: Normalization<Complex<T>>) -> Self {
+        self.norm = norm;
+        self
     }
 
     fn fft_r2c_lane(&self, data: &[T], out: &mut [Complex<T>]) {
         Self::assert_size(self.n, data.len());
         Self::assert_size(self.m, out.len());
-        let mut indata = vec![T::zero(); self.n];
-        for (a, b) in indata.iter_mut().zip(data.iter()) {
-            *a = *b;
-        }
-        self.plan_fwd.process(&mut indata, out).unwrap();
+        let mut buffer = vec![T::zero(); self.n];
+        buffer.clone_from_slice(data);
+        self.plan_fwd.process(&mut buffer, out).unwrap();
     }
 
     #[allow(clippy::cast_precision_loss)]
     fn ifft_r2c_lane(&self, data: &[Complex<T>], out: &mut [T]) {
         Self::assert_size(self.m, data.len());
         Self::assert_size(self.n, out.len());
-        let n64 = T::from_f64(1. / self.n as f64).unwrap();
-        let mut indata = vec![Complex::zero(); self.m];
-        for (a, b) in indata.iter_mut().zip(data.iter()) {
-            a.re = b.re * n64;
-            a.im = b.im * n64;
+        let mut buffer = vec![Complex::zero(); self.m];
+        buffer.clone_from_slice(data);
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Numpy => Self::norm_numpy(&mut buffer),
+            Normalization::Custom(f) => f(&mut buffer),
         }
         // First element must be real
-        indata[0].im = T::zero();
+        buffer[0].im = T::zero();
         // If original vector is even, last element must be real
         if self.n % 2 == 0 {
-            indata[self.m - 1].im = T::zero();
+            buffer[self.m - 1].im = T::zero();
         }
-        self.plan_bwd.process(&mut indata, out).unwrap();
+        self.plan_bwd.process(&mut buffer, out).unwrap();
+    }
+
+    fn norm_numpy(data: &mut [Complex<T>]) {
+        let n = T::one() / T::from_usize((data.len() - 1) * 2).unwrap();
+        for d in data.iter_mut() {
+            d.re = d.re * n;
+            d.im = d.im * n;
+        }
     }
 
     fn assert_size(n: usize, size: usize) {
@@ -552,6 +570,7 @@ pub struct DctHandler<T> {
     plan_dct2: Arc<dyn TransformType2And3<T>>,
     plan_dct3: Arc<dyn TransformType2And3<T>>,
     plan_dct4: Arc<dyn TransformType4<T>>,
+    norm: Normalization<T>,
 }
 
 impl<T: FftNum + FloatConst> DctHandler<T> {
@@ -581,15 +600,25 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
             plan_dct2: Arc::clone(&dct2),
             plan_dct3: Arc::clone(&dct3),
             plan_dct4: Arc::clone(&dct4),
+            norm: Normalization::Numpy,
         }
+    }
+
+    /// Change normalization
+    #[must_use]
+    pub fn normalization(mut self, norm: Normalization<T>) -> Self {
+        self.norm = norm;
+        self
     }
 
     fn dct1_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
-        let two = T::one() + T::one();
-        for (b, d) in out.iter_mut().zip(data.iter()) {
-            *b = *d * two;
+        out.clone_from_slice(data);
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Custom(f) => f(out),
         }
         self.plan_dct1.process_dct1(out);
     }
@@ -597,9 +626,11 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
     fn dct2_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
-        let two = T::one() + T::one();
-        for (b, d) in out.iter_mut().zip(data.iter()) {
-            *b = *d * two;
+        out.clone_from_slice(data);
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Custom(f) => f(out),
         }
         self.plan_dct2.process_dct2(out);
     }
@@ -607,9 +638,11 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
     fn dct3_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
-        let two = T::one() + T::one();
-        for (b, d) in out.iter_mut().zip(data.iter()) {
-            *b = *d * two;
+        out.clone_from_slice(data);
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Custom(f) => f(out),
         }
         self.plan_dct3.process_dct3(out);
     }
@@ -617,11 +650,20 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
     fn dct4_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
-        let two = T::one() + T::one();
-        for (b, d) in out.iter_mut().zip(data.iter()) {
-            *b = *d * two;
+        out.clone_from_slice(data);
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Custom(f) => f(out),
         }
         self.plan_dct4.process_dct4(out);
+    }
+
+    fn norm_numpy(data: &mut [T]) {
+        let two = T::one() + T::one();
+        for d in data.iter_mut() {
+            *d = *d * two;
+        }
     }
 
     fn assert_size(&self, size: usize) {
