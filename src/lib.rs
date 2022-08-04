@@ -61,7 +61,7 @@
 #![warn(rustdoc::missing_doc_code_examples)]
 extern crate ndarray;
 extern crate rustfft;
-use ndarray::{Array1, ArrayBase, Dimension, Zip};
+use ndarray::{Array1, ArrayBase, Axis, Dimension, Zip};
 use ndarray::{Data, DataMut};
 use num_traits::FloatConst;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -87,7 +87,7 @@ pub enum Normalization<T> {
 /// transforms, i.e. fft, ifft and dct.
 /// The fft/dct transforms are applied for each vector-lane along the
 /// specified axis.
-macro_rules! create_transform {
+macro_rules! create_transform2 {
     (
         $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
     ) => {
@@ -123,6 +123,52 @@ macro_rules! create_transform {
                     });
                 output.swap_axes(outer_axis, axis);
             }
+        }
+    };
+}
+
+macro_rules! create_transform {
+    (
+        $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
+    ) => {
+        $(#[$meta])*
+        pub fn $i<R, S, T, D>(
+            input: &ArrayBase<R, D>,
+            output: &mut ArrayBase<S, D>,
+            handler: &mut $h,
+            axis: usize,
+        ) where
+            T: FftNum + FloatConst,
+            R: Data<Elem = $a>,
+            S: Data<Elem = $b> + DataMut,
+            D: Dimension,
+        {
+            let n = output.shape()[axis];
+            Zip::from(input.lanes(Axis(axis)))
+            .and(output.lanes_mut(Axis(axis)))
+            .for_each(|x, mut y| {
+                if let Some(x_s) = x.as_slice() {
+                    if let Some(y_s) = y.as_slice_mut() {
+                        // x and y are contiguous
+                        handler.$p(x_s, y_s);
+                    } else {
+                        let mut outvec = Array1::zeros(n);
+                        // x is contiguous, y is not contiguous
+                        handler.$p(x_s, outvec.as_slice_mut().unwrap());
+                        y.assign(&outvec);
+                    }
+                } else {
+                    if let Some(y_s) = y.as_slice_mut() {
+                        // x is not contiguous, y is contiguous
+                        handler.$p(&x.to_vec(), y_s);
+                    } else {
+                        let mut outvec = Array1::zeros(n);
+                        // x and y are not contiguous
+                        handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                        y.assign(&outvec);
+                    }
+                }
+            });
         }
     };
 }
