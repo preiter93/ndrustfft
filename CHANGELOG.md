@@ -28,5 +28,5 @@ Changed
 
 Changed
 -------
-- The undefined first and last elements of real-to-complex transforms are nor actively set to zero
+- The undefined first and last elements of real-to-complex transforms are now actively set to zero
 
