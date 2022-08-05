@@ -1,6 +1,6 @@
 //! Perform 2-dimensional Fourier Transform.
 //!
-//! cargo run --example rfft
+//! cargo run --example fft2
 use ndarray::{array, Array2, Zip};
 use ndrustfft::{ndfft, ndifft};
 use ndrustfft::{Complex, FftHandler};
