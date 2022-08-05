@@ -51,12 +51,7 @@
 //! ```
 //!
 //! # Versions
-//! - v0.3.0: Upgrade `RealFft` to 3.0.0 and `RustDCT` to 0.7
-//! - \>= v0.2.2:
-//!
-//! The first and last elements of real-to-complex transforms are
-//! per definition purely real. This is now enforced actively, by
-//! setting the complex part to zero - similar to numpys rfft.
+//! [Changelog](CHANGELOG.md)
 #![warn(missing_docs)]
 #![warn(rustdoc::missing_doc_code_examples)]
 extern crate ndarray;
@@ -81,50 +76,6 @@ pub enum Normalization<T> {
     Numpy,
     /// Apply custom normalization
     Custom(fn(&mut [T])),
-}
-
-/// Declare procedural macro which creates functions for the individual
-/// transforms, i.e. fft, ifft and dct.
-/// The fft/dct transforms are applied for each vector-lane along the
-/// specified axis.
-macro_rules! create_transform2 {
-    (
-        $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
-    ) => {
-        $(#[$meta])*
-        pub fn $i<R, S, T, D>(
-            input: &ArrayBase<R, D>,
-            output: &mut ArrayBase<S, D>,
-            handler: &mut $h,
-            axis: usize,
-        ) where
-            T: FftNum + FloatConst,
-            R: Data<Elem = $a>,
-            S: Data<Elem = $b> + DataMut,
-            D: Dimension,
-        {
-            let outer_axis = input.ndim() - 1;
-            if axis == outer_axis {
-                Zip::from(input.rows())
-                    .and(output.rows_mut())
-                    .for_each(|x, mut y| {
-                        handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
-                    });
-            } else {
-                let mut outvec = Array1::zeros(output.shape()[axis]);
-                let mut input = input.view();
-                input.swap_axes(outer_axis, axis);
-                output.swap_axes(outer_axis, axis);
-                Zip::from(input.rows())
-                    .and(output.rows_mut())
-                    .for_each(|x, mut y| {
-                        handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
-                        y.assign(&outvec);
-                    });
-                output.swap_axes(outer_axis, axis);
-            }
-        }
-    };
 }
 
 macro_rules! create_transform {
@@ -172,10 +123,10 @@ macro_rules! create_transform {
         }
     };
 }
-
-/// Similar to ``create_transform``, but supports parallel computation.
 macro_rules! create_transform_par {
-    ($(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
+    (
+        $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
+    ) => {
         $(#[$meta])*
         pub fn $i<R, S, T, D>(
             input: &ArrayBase<R, D>,
@@ -188,27 +139,32 @@ macro_rules! create_transform_par {
             S: Data<Elem = $b> + DataMut,
             D: Dimension,
         {
-            let outer_axis = input.ndim() - 1;
-            if axis == outer_axis {
-                Zip::from(input.rows())
-                    .and(output.rows_mut())
-                    .par_for_each(|x, mut y| {
-                        handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
-                    });
-            } else {
-                let n = output.shape()[axis];
-                let mut input = input.view();
-                input.swap_axes(outer_axis, axis);
-                output.swap_axes(outer_axis, axis);
-                Zip::from(input.rows())
-                    .and(output.rows_mut())
-                    .par_for_each(|x, mut y| {
+            let n = output.shape()[axis];
+            Zip::from(input.lanes(Axis(axis)))
+            .and(output.lanes_mut(Axis(axis)))
+            .par_for_each(|x, mut y| {
+                if let Some(x_s) = x.as_slice() {
+                    if let Some(y_s) = y.as_slice_mut() {
+                        // x and y are contiguous
+                        handler.$p(x_s, y_s);
+                    } else {
                         let mut outvec = Array1::zeros(n);
+                        // x is contiguous, y is not contiguous
+                        handler.$p(x_s, outvec.as_slice_mut().unwrap());
+                        y.assign(&outvec);
+                    }
+                } else {
+                    if let Some(y_s) = y.as_slice_mut() {
+                        // x is not contiguous, y is contiguous
+                        handler.$p(&x.to_vec(), y_s);
+                    } else {
+                        let mut outvec = Array1::zeros(n);
+                        // x and y are not contiguous
                         handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
                         y.assign(&outvec);
-                    });
-                output.swap_axes(outer_axis, axis);
-            }
+                    }
+                }
+            });
         }
     };
 }
@@ -815,7 +771,7 @@ create_transform_par!(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ndarray::{array, Array2};
+    use ndarray::{array, Array2, ShapeBuilder};
 
     fn approx_eq<A, S, D>(result: &ArrayBase<S, D>, expected: &ArrayBase<S, D>)
     where
@@ -858,6 +814,14 @@ mod test {
 
     fn test_matrix_complex() -> Array2<Complex<f64>> {
         test_matrix().mapv(|x| Complex::new(x, x))
+    }
+
+    fn test_matrix_complex_f() -> Array2<Complex<f64>> {
+        let mut arr = Array2::zeros((6, 6).f());
+        for (a, b) in arr.iter_mut().zip(test_matrix_complex().iter()) {
+            *a = *b
+        }
+        arr
     }
 
     #[test]
@@ -907,6 +871,61 @@ mod test {
 
         // Transform Par
         let mut v = test_matrix_complex();
+        ndfft_par(&v, &mut vhat, &mut handler, 1);
+        ndifft_par(&vhat, &mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_f_layout() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex_f();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft(&v, &mut vhat, &mut handler, 1);
+        ndifft(&vhat, &mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
+
+        // Transform Par
+        let mut v = test_matrix_complex_f();
         ndfft_par(&v, &mut vhat, &mut handler, 1);
         ndifft_par(&vhat, &mut v, &mut handler, 1);
 
@@ -1132,3 +1151,87 @@ mod test {
         approx_eq(&vhat, &solution);
     }
 }
+
+// /// Similar to ``create_transform``, but supports parallel computation.
+// macro_rules! create_transform_par2 {
+//     ($(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident) => {
+//         $(#[$meta])*
+//         pub fn $i<R, S, T, D>(
+//             input: &ArrayBase<R, D>,
+//             output: &mut ArrayBase<S, D>,
+//             handler: &mut $h,
+//             axis: usize,
+//         ) where
+//             T: FftNum + FloatConst,
+//             R: Data<Elem = $a>,
+//             S: Data<Elem = $b> + DataMut,
+//             D: Dimension,
+//         {
+//             let outer_axis = input.ndim() - 1;
+//             if axis == outer_axis {
+//                 Zip::from(input.rows())
+//                     .and(output.rows_mut())
+//                     .par_for_each(|x, mut y| {
+//                         handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
+//                     });
+//             } else {
+//                 let n = output.shape()[axis];
+//                 let mut input = input.view();
+//                 input.swap_axes(outer_axis, axis);
+//                 output.swap_axes(outer_axis, axis);
+//                 Zip::from(input.rows())
+//                     .and(output.rows_mut())
+//                     .par_for_each(|x, mut y| {
+//                         let mut outvec = Array1::zeros(n);
+//                         handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+//                         y.assign(&outvec);
+//                     });
+//                 output.swap_axes(outer_axis, axis);
+//             }
+//         }
+//     };
+// }
+
+// /// Declare procedural macro which creates functions for the individual
+// /// transforms, i.e. fft, ifft and dct.
+// /// The fft/dct transforms are applied for each vector-lane along the
+// /// specified axis.
+// macro_rules! create_transform2 {
+//     (
+//         $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
+//     ) => {
+//         $(#[$meta])*
+//         pub fn $i<R, S, T, D>(
+//             input: &ArrayBase<R, D>,
+//             output: &mut ArrayBase<S, D>,
+//             handler: &mut $h,
+//             axis: usize,
+//         ) where
+//             T: FftNum + FloatConst,
+//             R: Data<Elem = $a>,
+//             S: Data<Elem = $b> + DataMut,
+//             D: Dimension,
+//         {
+//             let outer_axis = input.ndim() - 1;
+//             if axis == outer_axis {
+//                 Zip::from(input.rows())
+//                     .and(output.rows_mut())
+//                     .for_each(|x, mut y| {
+//                         handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
+//                     });
+//             } else {
+//                 let mut outvec = Array1::zeros(output.shape()[axis]);
+//                 let mut input = input.view();
+//                 input.swap_axes(outer_axis, axis);
+//                 output.swap_axes(outer_axis, axis);
+//                 Zip::from(input.rows())
+//                     .and(output.rows_mut())
+//                     .for_each(|x, mut y| {
+//                         handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+//                         y.assign(&outvec);
+//                     });
+//                 output.swap_axes(outer_axis, axis);
+//             }
+//         }
+//     };
+// }

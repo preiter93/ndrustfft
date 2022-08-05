@@ -53,11 +53,6 @@ ndfft_r2c(
 ```
 
 ## Versions
-- v0.3.0: Upgrade `RealFft` to 3.0.0 and `RustDCT` to 0.7
-- \>= v0.2.2:
-
-The first and last elements of real-to-complex transforms are
-per definition purely real. This is now enforced actively, by
-setting the complex part to zero - similar to numpys rfft.
+[Changelog](CHANGELOG.md)
 
 License: MIT
