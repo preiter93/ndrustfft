@@ -50,6 +50,15 @@
 //! );
 //! ```
 //!
+//! # Normalization
+//! `RustFFT`, `RustDCT` and `RealFft`  do not no normalizations,
+//! while this library applies normalization as scipy by default.
+//! This means, inverse ffts are divided by a factor of `data.len()`,
+//! and dcts are multiplied by two. It is possible to switch from
+//! default to no normalization, or applying a custom normalization,
+//! using the normalization builder.
+//! See: `examples/fft_norm`
+//!
 //! # Versions
 //! [Changelog](CHANGELOG.md)
 #![warn(missing_docs)]
@@ -72,8 +81,8 @@ use std::sync::Arc;
 pub enum Normalization<T> {
     /// No normalization applied, output equals `rustfft`, `realfft` or `rustdct`
     None,
-    /// Apply normalization as numpy (default)
-    Numpy,
+    /// Apply normalization as scipy (default)
+    Default,
     /// Apply custom normalization
     Custom(fn(&mut [T])),
 }
@@ -95,31 +104,54 @@ macro_rules! create_transform {
             D: Dimension,
         {
             let n = output.shape()[axis];
-            Zip::from(input.lanes(Axis(axis)))
-            .and(output.lanes_mut(Axis(axis)))
-            .for_each(|x, mut y| {
-                if let Some(x_s) = x.as_slice() {
-                    if let Some(y_s) = y.as_slice_mut() {
-                        // x and y are contiguous
-                        handler.$p(x_s, y_s);
-                    } else {
-                        let mut outvec = Array1::zeros(n);
-                        // x is contiguous, y is not contiguous
-                        handler.$p(x_s, outvec.as_slice_mut().unwrap());
-                        y.assign(&outvec);
-                    }
+            if input.is_standard_layout() && output.is_standard_layout() {
+                let outer_axis = input.ndim() - 1;
+                if axis == outer_axis {
+                    Zip::from(input.rows())
+                        .and(output.rows_mut())
+                        .for_each(|x, mut y| {
+                            handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
+                        });
                 } else {
-                    if let Some(y_s) = y.as_slice_mut() {
-                        // x is not contiguous, y is contiguous
-                        handler.$p(&x.to_vec(), y_s);
-                    } else {
-                        let mut outvec = Array1::zeros(n);
-                        // x and y are not contiguous
-                        handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
-                        y.assign(&outvec);
-                    }
+                    let mut outvec = Array1::zeros(output.shape()[axis]);
+                    let mut input = input.view();
+                    input.swap_axes(outer_axis, axis);
+                    output.swap_axes(outer_axis, axis);
+                    Zip::from(input.rows())
+                        .and(output.rows_mut())
+                        .for_each(|x, mut y| {
+                            handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                            y.assign(&outvec);
+                        });
+                    output.swap_axes(outer_axis, axis);
                 }
-            });
+            } else {
+                Zip::from(input.lanes(Axis(axis)))
+                .and(output.lanes_mut(Axis(axis)))
+                .for_each(|x, mut y| {
+                    if let Some(x_s) = x.as_slice() {
+                        if let Some(y_s) = y.as_slice_mut() {
+                            // x and y are contiguous
+                            handler.$p(x_s, y_s);
+                        } else {
+                            let mut outvec = Array1::zeros(n);
+                            // x is contiguous, y is not contiguous
+                            handler.$p(x_s, outvec.as_slice_mut().unwrap());
+                            y.assign(&outvec);
+                        }
+                    } else {
+                        if let Some(y_s) = y.as_slice_mut() {
+                            // x is not contiguous, y is contiguous
+                            handler.$p(&x.to_vec(), y_s);
+                        } else {
+                            let mut outvec = Array1::zeros(n);
+                            // x and y are not contiguous
+                            handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                            y.assign(&outvec);
+                        }
+                    }
+                });
+            }
         }
     };
 }
@@ -140,31 +172,55 @@ macro_rules! create_transform_par {
             D: Dimension,
         {
             let n = output.shape()[axis];
-            Zip::from(input.lanes(Axis(axis)))
-            .and(output.lanes_mut(Axis(axis)))
-            .par_for_each(|x, mut y| {
-                if let Some(x_s) = x.as_slice() {
-                    if let Some(y_s) = y.as_slice_mut() {
-                        // x and y are contiguous
-                        handler.$p(x_s, y_s);
-                    } else {
-                        let mut outvec = Array1::zeros(n);
-                        // x is contiguous, y is not contiguous
-                        handler.$p(x_s, outvec.as_slice_mut().unwrap());
-                        y.assign(&outvec);
-                    }
+            if input.is_standard_layout() && output.is_standard_layout() {
+                let outer_axis = input.ndim() - 1;
+                if axis == outer_axis {
+                    Zip::from(input.rows())
+                        .and(output.rows_mut())
+                        .par_for_each(|x, mut y| {
+                            handler.$p(x.as_slice().unwrap(), y.as_slice_mut().unwrap());
+                        });
                 } else {
-                    if let Some(y_s) = y.as_slice_mut() {
-                        // x is not contiguous, y is contiguous
-                        handler.$p(&x.to_vec(), y_s);
-                    } else {
-                        let mut outvec = Array1::zeros(n);
-                        // x and y are not contiguous
-                        handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
-                        y.assign(&outvec);
-                    }
+                    let n = output.shape()[axis];
+                    let mut input = input.view();
+                    input.swap_axes(outer_axis, axis);
+                    output.swap_axes(outer_axis, axis);
+                    Zip::from(input.rows())
+                        .and(output.rows_mut())
+                        .par_for_each(|x, mut y| {
+                            let mut outvec = Array1::zeros(n);
+                            handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                            y.assign(&outvec);
+                        });
+                    output.swap_axes(outer_axis, axis);
                 }
-            });
+            } else {
+            Zip::from(input.lanes(Axis(axis)))
+                .and(output.lanes_mut(Axis(axis)))
+                .par_for_each(|x, mut y| {
+                    if let Some(x_s) = x.as_slice() {
+                        if let Some(y_s) = y.as_slice_mut() {
+                            // x and y are contiguous
+                            handler.$p(x_s, y_s);
+                        } else {
+                            let mut outvec = Array1::zeros(n);
+                            // x is contiguous, y is not contiguous
+                            handler.$p(x_s, outvec.as_slice_mut().unwrap());
+                            y.assign(&outvec);
+                        }
+                    } else {
+                        if let Some(y_s) = y.as_slice_mut() {
+                            // x is not contiguous, y is contiguous
+                            handler.$p(&x.to_vec(), y_s);
+                        } else {
+                            let mut outvec = Array1::zeros(n);
+                            // x and y are not contiguous
+                            handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                            y.assign(&outvec);
+                        }
+                    }
+                });
+            }
         }
     };
 }
@@ -231,7 +287,7 @@ impl<T: FftNum> FftHandler<T> {
             n,
             plan_fwd: Arc::clone(&fwd),
             plan_bwd: Arc::clone(&bwd),
-            norm: Normalization::Numpy,
+            norm: Normalization::Default,
         }
     }
 
@@ -257,12 +313,12 @@ impl<T: FftNum> FftHandler<T> {
         self.plan_bwd.process(out);
         match self.norm {
             Normalization::None => (),
-            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
         }
     }
 
-    fn norm_numpy(data: &mut [Complex<T>]) {
+    fn norm_default(data: &mut [Complex<T>]) {
         let n = T::one() / T::from_usize(data.len()).unwrap();
         for d in data.iter_mut() {
             *d = *d * n;
@@ -413,7 +469,7 @@ impl<T: FftNum> R2cFftHandler<T> {
             m: n / 2 + 1,
             plan_fwd: Arc::clone(&fwd),
             plan_bwd: Arc::clone(&bwd),
-            norm: Normalization::Numpy,
+            norm: Normalization::Default,
         }
     }
 
@@ -440,7 +496,7 @@ impl<T: FftNum> R2cFftHandler<T> {
         buffer.clone_from_slice(data);
         match self.norm {
             Normalization::None => (),
-            Normalization::Numpy => Self::norm_numpy(&mut buffer),
+            Normalization::Default => Self::norm_default(&mut buffer),
             Normalization::Custom(f) => f(&mut buffer),
         }
         // First element must be real
@@ -452,7 +508,7 @@ impl<T: FftNum> R2cFftHandler<T> {
         self.plan_bwd.process(&mut buffer, out).unwrap();
     }
 
-    fn norm_numpy(data: &mut [Complex<T>]) {
+    fn norm_default(data: &mut [Complex<T>]) {
         let n = T::one() / T::from_usize((data.len() - 1) * 2).unwrap();
         for d in data.iter_mut() {
             d.re = d.re * n;
@@ -602,7 +658,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
             plan_dct2: Arc::clone(&dct2),
             plan_dct3: Arc::clone(&dct3),
             plan_dct4: Arc::clone(&dct4),
-            norm: Normalization::Numpy,
+            norm: Normalization::Default,
         }
     }
 
@@ -619,7 +675,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         out.clone_from_slice(data);
         match self.norm {
             Normalization::None => (),
-            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
         }
         self.plan_dct1.process_dct1(out);
@@ -631,7 +687,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         out.clone_from_slice(data);
         match self.norm {
             Normalization::None => (),
-            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
         }
         self.plan_dct2.process_dct2(out);
@@ -643,7 +699,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         out.clone_from_slice(data);
         match self.norm {
             Normalization::None => (),
-            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
         }
         self.plan_dct3.process_dct3(out);
@@ -655,13 +711,13 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         out.clone_from_slice(data);
         match self.norm {
             Normalization::None => (),
-            Normalization::Numpy => Self::norm_numpy(out),
+            Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
         }
         self.plan_dct4.process_dct4(out);
     }
 
-    fn norm_numpy(data: &mut [T]) {
+    fn norm_default(data: &mut [T]) {
         let two = T::one() + T::one();
         for d in data.iter_mut() {
             *d = *d * two;
