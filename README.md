@@ -53,12 +53,13 @@ ndfft_r2c(
 ```
 
 ## Normalization
-`RustFFT`, `RustDCT` and `RealFft`  do not no normalizations,
+`RustFFT`, `RustDCT` and `RealFft`  do not normalise,
 while this library applies normalization as scipy by default.
 This means, inverse ffts are divided by a factor of `data.len()`,
-and dcts are multiplied by two. It is possible to switch from
-default to no normalization, or applying a custom normalization,
-using the normalization builder.
+and dcts are multiplied by two. It is possible to switch from the
+default normalization to no normalization, or to apply a custom
+normalization by using the normalization builder.
+
 See: `examples/fft_norm`
 
 ## Versions
