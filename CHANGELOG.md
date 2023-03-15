@@ -1,20 +1,16 @@
-Unreleased
------------
+Released
+--------
 
-0.4 - 5 August 2022
+0.4 - 15 March 2023
 ===================
-
-Fixed
------
-- Error on arrays that are not standard layout. `ndrustfft` should now be able to deal with different `ndarray` layouts.
 
 Changed
 -------
-- Add option for different normalizations. See `examples/fft_norm`. Default normalization is, as in previous versions, based on numpys normalization.
-
-
-Released
---------
+- Add support for non-standard layout input arrays.
+- Add support for custom fft normalization. See `examples/fft_norm`.
+- Remove specification of the minor version, use `rustfft` v6
+- Remove specification of the minor version, use `realfft` v3
+- Better performance
 
 0.3.0
 =====
