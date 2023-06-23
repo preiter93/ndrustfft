@@ -1,6 +1,13 @@
 Released
 --------
 
+0.4.1 - 23 June 2023
+===================
+
+Bugfix
+-------
+- Fixed normalization of rfft for inputs with odd number of elements
+
 0.4 - 15 March 2023
 ===================
 
