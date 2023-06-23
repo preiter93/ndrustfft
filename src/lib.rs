@@ -497,7 +497,7 @@ impl<T: FftNum> R2cFftHandler<T> {
         buffer.clone_from_slice(data);
         match self.norm {
             Normalization::None => (),
-            Normalization::Default => Self::norm_default(&mut buffer),
+            Normalization::Default => Self::norm_default(&mut buffer, self.n),
             Normalization::Custom(f) => f(&mut buffer),
         }
         // First element must be real
@@ -509,8 +509,8 @@ impl<T: FftNum> R2cFftHandler<T> {
         self.plan_bwd.process(&mut buffer, out).unwrap();
     }
 
-    fn norm_default(data: &mut [Complex<T>]) {
-        let n = T::one() / T::from_usize((data.len() - 1) * 2).unwrap();
+    fn norm_default(data: &mut [Complex<T>], size: usize) {
+        let n = T::one() / T::from_usize(size).unwrap();
         for d in data.iter_mut() {
             d.re = d.re * n;
             d.im = d.im * n;
@@ -1078,6 +1078,31 @@ mod test {
         ndifft_r2c(&vhat, &mut v, &mut rfft_handler, 0);
         // assert
         approx_eq(&v, &solution_numpy_last_elem);
+    }
+
+    #[test]
+    fn test_fft_r2c_odd() {
+        // Setup
+        let mut v = array![[1., 2., 3.], [4., 5., 6.], [7., 8., 9.],];
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        let mut handler = R2cFftHandler::<f64>::new(ny);
+
+        // Transform
+        ndfft_r2c(&v, &mut vhat, &mut handler, 1);
+        ndifft_r2c(&vhat, &mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq(&v, &v_copy);
+
+        // Transform Par
+        let mut v = array![[1., 2., 3.], [4., 5., 6.], [7., 8., 9.],];
+        ndfft_r2c_par(&v, &mut vhat, &mut handler, 1);
+        ndifft_r2c_par(&vhat, &mut v, &mut handler, 1);
+
+        // // Assert
+        approx_eq(&v, &v_copy);
     }
 
     #[test]
