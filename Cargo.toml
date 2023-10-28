@@ -1,6 +1,6 @@
 [package]
 name = "ndrustfft"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
 description = "N-dimensional FFT, real-to-complex FFT and real-to-real DCT"
@@ -14,8 +14,8 @@ name = "ndrustfft"
 path = "src/lib.rs"
 
 [dependencies]
-ndarray = { version = "0.15", features = ["rayon"] }
-rustfft = "6"
+ndarray = { version = "0.15" }
+rustfft = { version = "6", default-features = false }
 num-traits = "0.2"
 rustdct = "0.7"
 realfft = "3"
@@ -30,3 +30,10 @@ harness = false
 [[bench]]
 name = "ndrustfft_par"
 harness = false
+
+[features]
+default = ["avx", "sse", "neon", "parallel"]
+avx = ["rustfft/avx"]
+sse = ["rustfft/sse"]
+neon = ["rustfft/neon"]
+parallel = ["ndarray/rayon"]

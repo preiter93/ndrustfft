@@ -1,11 +1,16 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+#[cfg(feature = "parallel")]
 use ndarray::{Array, Dim, Ix};
-use ndrustfft::{nddct1_par, DctHandler};
-use ndrustfft::{ndfft_par, Complex, FftHandler};
-use ndrustfft::{ndfft_r2c_par, R2cFftHandler};
+#[cfg(feature = "parallel")]
+use ndrustfft::{
+    nddct1_par, ndfft_par, ndfft_r2c_par, Complex, DctHandler, FftHandler, R2cFftHandler,
+};
+#[cfg(feature = "parallel")]
 const FFT_SIZES: [usize; 4] = [128, 264, 512, 1024];
+#[cfg(feature = "parallel")]
 const DCT_SIZES: [usize; 4] = [129, 265, 513, 1025];
 
+#[cfg(feature = "parallel")]
 pub fn bench_fft2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("fft2d_par");
     for n in FFT_SIZES.iter() {
@@ -24,6 +29,7 @@ pub fn bench_fft2d(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "parallel")]
 pub fn bench_rfft2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("rfft2d_par");
     for n in FFT_SIZES.iter() {
@@ -42,6 +48,7 @@ pub fn bench_rfft2d(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "parallel")]
 pub fn bench_dct2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("dct2d_par");
     for n in DCT_SIZES.iter() {
@@ -59,5 +66,14 @@ pub fn bench_dct2d(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "parallel")]
 criterion_group!(benches, bench_fft2d, bench_rfft2d, bench_dct2d);
+#[cfg(feature = "parallel")]
 criterion_main!(benches);
+
+#[cfg(not(feature = "parallel"))]
+pub fn bench_stub(_c: &mut Criterion) {}
+#[cfg(not(feature = "parallel"))]
+criterion_main!(benches);
+#[cfg(not(feature = "parallel"))]
+criterion_group!(benches, bench_stub);

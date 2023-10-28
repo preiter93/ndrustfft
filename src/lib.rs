@@ -60,10 +60,16 @@
 //!
 //! See: `examples/fft_norm`
 //!
+//! # Features
+//!
+//! - parallel: Enables parallel transform using `ndarrays` + `rayon` (enabled by default)
+//! - avx: Enables `rustfft`'s avx feature (enabled by default)
+//! - sse: Enables `rustfft`'s sse feature (enabled by default)
+//! - neon: Enables `rustfft`'s neon feature (enabled by default)
+//!
 //! # Versions
 //! [Changelog](CHANGELOG.md)
 #![warn(missing_docs)]
-#![warn(rustdoc::missing_doc_code_examples)]
 extern crate ndarray;
 extern crate rustfft;
 use ndarray::{Array1, ArrayBase, Axis, Dimension, Zip};
@@ -156,6 +162,8 @@ macro_rules! create_transform {
         }
     };
 }
+
+#[cfg(feature = "parallel")]
 macro_rules! create_transform_par {
     (
         $(#[$meta:meta])* $i: ident, $a: ty, $b: ty, $h: ty, $p: ident
@@ -385,6 +393,7 @@ create_transform!(
     ifft_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Complex-to-complex Fourier Transform (parallel).
     ///
@@ -396,6 +405,7 @@ create_transform_par!(
     fft_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Complex-to-complex inverse Fourier Transform (parallel).
     ///
@@ -573,6 +583,7 @@ create_transform!(
     ifft_r2c_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-complex Fourier Transform (parallel).
     ///
@@ -584,6 +595,7 @@ create_transform_par!(
     fft_r2c_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Complex-to-real inverse Fourier Transform (parallel).
     ///
@@ -759,6 +771,7 @@ create_transform!(
     dct1_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 1 DCT-I  (parallel).
     ///
@@ -779,6 +792,7 @@ create_transform!(
     dct2_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 2 DCT-2  (parallel).
     nddct2_par,
@@ -797,6 +811,7 @@ create_transform!(
     dct3_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 3 DCT-3  (parallel).
     nddct3_par,
@@ -815,6 +830,7 @@ create_transform!(
     dct4_lane
 );
 
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 4 DCT-4  (parallel).
     nddct4_par,
@@ -925,9 +941,47 @@ mod test {
         // Assert
         approx_eq_complex(&vhat, &solution);
         approx_eq_complex(&v, &v_copy);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_fft_par() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
         let mut v = test_matrix_complex();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
         ndfft_par(&v, &mut vhat, &mut handler, 1);
         ndifft_par(&vhat, &mut v, &mut handler, 1);
 
@@ -980,15 +1034,6 @@ mod test {
         // Assert
         approx_eq_complex(&vhat, &solution);
         approx_eq_complex(&v, &v_copy);
-
-        // Transform Par
-        let mut v = test_matrix_complex_f();
-        ndfft_par(&v, &mut vhat, &mut handler, 1);
-        ndifft_par(&vhat, &mut v, &mut handler, 1);
-
-        // Assert
-        approx_eq_complex(&vhat, &solution);
-        approx_eq_complex(&v, &v_copy);
     }
 
     #[test]
@@ -1035,13 +1080,51 @@ mod test {
         // Assert
         approx_eq_complex(&vhat, &solution);
         approx_eq(&v, &v_copy);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_fft_r2c_par() {
+        // Solution from np.fft.rfft
+        let solution_re = array![
+            [0.61, 0.543, -0.572, 0.048],
+            [2.795, 1.944, -1.291, 1.179],
+            [2.259, 0.36, 2.275, 0.979],
+            [-0.296, 2.696, 2.044, -4.282],
+            [0.573, 1.753, -2.155, -2.613],
+            [3.978, -1.596, -3.205, 1.154],
+        ];
+
+        let solution_im = array![
+            [0., -2.562, -3.08, 0.],
+            [0., 1.332, -1.51, 0.],
+            [0., -0.242, 2.23, 0.],
+            [0., 3.592, 1.5, 0.],
+            [0., 2.713, 1.695, 0.],
+            [0., 0.633, -3.339, 0.],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
         let mut v = test_matrix();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        let mut handler = R2cFftHandler::<f64>::new(ny);
+
+        // Transform
         ndfft_r2c_par(&v, &mut vhat, &mut handler, 1);
         ndifft_r2c_par(&vhat, &mut v, &mut handler, 1);
 
-        // // Assert
+        // Assert
         approx_eq_complex(&vhat, &solution);
         approx_eq(&v, &v_copy);
     }
@@ -1095,13 +1178,23 @@ mod test {
 
         // Assert
         approx_eq(&v, &v_copy);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_fft_r2c_odd_par() {
+        // Setup
         let mut v = array![[1., 2., 3.], [4., 5., 6.], [7., 8., 9.],];
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny / 2 + 1));
+        let mut handler = R2cFftHandler::<f64>::new(ny);
+
+        // Transform
         ndfft_r2c_par(&v, &mut vhat, &mut handler, 1);
         ndifft_r2c_par(&vhat, &mut v, &mut handler, 1);
 
-        // // Assert
+        // Assert
         approx_eq(&v, &v_copy);
     }
 
@@ -1128,9 +1221,28 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct1_par() {
+        // Solution from scipy.fft.dct(x, type=1)
+        let solution = array![
+            [2.469, 4.259, 0.6, 0.04, -4.957, -1.353],
+            [3.953, -0.374, 4.759, -0.436, -2.643, 2.235],
+            [2.632, 0.818, -1.609, 1.053, 5.008, 1.008],
+            [-3.652, -2.628, 4.81, 2.632, 4.666, -7.138],
+            [-0.835, -2.982, 4.105, -3.192, 1.265, -2.297],
+            [8.743, -2.422, 1.167, -0.841, -7.506, 3.011],
+        ];
+
+        // Setup
         let v = test_matrix();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
         nddct1_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
@@ -1160,9 +1272,28 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct2_par() {
+        // Solution from scipy.fft.dct(x, type=2)
+        let solution = array![
+            [1.22, 5.25, -1.621, -0.619, -5.906, -1.105],
+            [5.59, -0.209, 4.699, 0.134, -3.907, 1.838],
+            [4.518, 1.721, 0.381, 1.492, 6.138, 0.513],
+            [-0.592, -3.746, 8.262, 1.31, 4.642, -6.125],
+            [1.146, -5.709, 5.75, -4.275, 0.78, -0.963],
+            [7.956, -2.873, -2.13, 0.006, -8.988, 2.56],
+        ];
+
+        // Setup
         let v = test_matrix();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
         nddct2_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
@@ -1192,9 +1323,28 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct3_par() {
+        // Solution from scipy.fft.dct(x, type=3)
+        let solution = array![
+            [2.898, 4.571, -0.801, 1.65, -5.427, -2.291],
+            [2.701, -0.578, 5.768, -0.335, -3.158, 0.882],
+            [2.348, -0.184, -1.258, 0.048, 5.472, 2.081],
+            [-3.421, -2.075, 6.944, 0.264, 7.505, -4.315],
+            [-1.43, -3.023, 6.317, -5.259, 1.991, -1.44],
+            [5.76, -4.047, 1.974, 0.376, -8.651, 0.117],
+        ];
+
+        // Setup
         let v = test_matrix();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
         nddct3_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
@@ -1224,9 +1374,28 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
 
-        // Transform Par
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct4_par() {
+        // Solution from scipy.fft.dct(x, type=4)
+        let solution = array![
+            [3.18, 2.73, -2.314, -2.007, -5.996, 2.127],
+            [3.175, 0.865, 4.939, -4.305, -0.443, 1.568],
+            [3.537, 0.677, 0.371, 4.186, 4.528, -1.531],
+            [-2.687, 1.838, 6.968, 0.899, 2.456, -8.79],
+            [-2.289, -1.002, 3.67, -5.705, 3.867, -4.349],
+            [4.192, -5.626, 1.789, -6.057, -4.61, 4.627],
+        ];
+
+        // Setup
         let v = test_matrix();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<f64>::zeros((nx, ny));
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
         nddct4_par(&v, &mut vhat, &mut handler, 1);
 
         // Assert
