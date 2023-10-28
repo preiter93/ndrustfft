@@ -62,6 +62,13 @@ normalization by using the normalization builder.
 
 See: `examples/fft_norm`
 
+## Features
+
+- parallel: Enables parallel transform using `ndarrays` + `rayon` (enabled by default)
+- avx: Enables `rustfft`'s avx feature (enabled by default)
+- sse: Enables `rustfft`'s sse feature (enabled by default)
+- neon: Enables `rustfft`'s neon feature (enabled by default)
+
 ## Versions
 [Changelog](CHANGELOG.md)
 
