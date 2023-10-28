@@ -329,7 +329,7 @@ impl<T: FftNum> FftHandler<T> {
 
     fn norm_default(data: &mut [Complex<T>]) {
         let n = T::one() / T::from_usize(data.len()).unwrap();
-        for d in data.iter_mut() {
+        for d in &mut *data {
             *d = *d * n;
         }
     }
@@ -521,7 +521,7 @@ impl<T: FftNum> R2cFftHandler<T> {
 
     fn norm_default(data: &mut [Complex<T>], size: usize) {
         let n = T::one() / T::from_usize(size).unwrap();
-        for d in data.iter_mut() {
+        for d in &mut *data {
             d.re = d.re * n;
             d.im = d.im * n;
         }
@@ -732,7 +732,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
 
     fn norm_default(data: &mut [T]) {
         let two = T::one() + T::one();
-        for d in data.iter_mut() {
+        for d in &mut *data {
             *d = *d * two;
         }
     }
