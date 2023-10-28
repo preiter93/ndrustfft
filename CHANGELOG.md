@@ -1,6 +1,15 @@
 Released
 --------
 
+0.4.2 - 28 October 2023
+===================
+
+Added
+-------
+Feature flags (all enabled by default)
+- parallel: Enables parallel iterators
+- avx/sse/neon: Enables rustfft's feature flags
+
 0.4.1 - 23 June 2023
 ===================
 
