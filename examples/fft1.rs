@@ -12,5 +12,5 @@ fn main() {
     ndfft(&x, &mut xhat, &mut handler, 0);
     ndifft(&xhat, &mut x, &mut handler, 0);
     println!("xhat: {xhat}");
-    println!("x: {x}");
+    println!("x: {x}"); // 1+1.j, 2+2.j, 3+3.j
 }

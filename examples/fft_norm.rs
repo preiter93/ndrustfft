@@ -17,7 +17,7 @@ fn main() {
     let mut handler = FftHandler::<f64>::new(n).normalization(Normalization::Default);
     ndfft(&v.clone(), &mut vhat, &mut handler, 0);
     ndifft(&vhat, &mut v2, &mut handler, 0);
-    println!("{:?}", v2); // // 1+1.j, 2+2.j, 3+3.j
+    println!("{:?}", v2); // 1+1.j, 2+2.j, 3+3.j
 
     // No normalization
     let mut handler = FftHandler::<f64>::new(n).normalization(Normalization::None);
@@ -29,7 +29,7 @@ fn main() {
     let mut handler = FftHandler::<f64>::new(n).normalization(Normalization::Custom(my_norm));
     ndfft(&v.clone(), &mut vhat, &mut handler, 0);
     ndifft(&vhat, &mut v2, &mut handler, 0);
-    println!("{:?}", v2); // // 2+2.j, 4+4.j, 6+6.j
+    println!("{:?}", v2); // 2+2.j, 4+4.j, 6+6.j
 }
 
 fn my_norm(data: &mut [Complex<f64>]) {
