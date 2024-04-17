@@ -1,6 +1,11 @@
 Released
 --------
 
+0.4.3 - 17 April 2024
+===================
+
+- Fixed mistake in documentation
+
 0.4.2 - 28 October 2023
 ===================
 
