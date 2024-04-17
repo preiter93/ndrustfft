@@ -278,7 +278,7 @@ impl<T: FftNum> FftHandler<T> {
     ///
     /// * `n` - Length of array along axis of which fft will be performed.
     /// The size of the complex array after the fft is performed will be of
-    /// size *n / 2 + 1*.
+    /// size *n*.
     ///
     /// # Examples
     ///
