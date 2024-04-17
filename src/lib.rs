@@ -83,14 +83,14 @@ pub use rustfft::FftNum;
 use rustfft::{Fft, FftPlanner};
 use std::sync::Arc;
 
-/// Normalize spectrum
+/// Represents different types of normalization methods.
 #[derive(Clone)]
 pub enum Normalization<T> {
-    /// No normalization applied, output equals `rustfft`, `realfft` or `rustdct`
+    /// No normalization applied, output equals `rustfft`, `realfft` or `rustdct`.
     None,
-    /// Apply normalization as scipy (default)
+    /// Applies normalization similar to scipy's default behavior.
     Default,
-    /// Apply custom normalization
+    /// Applies a custom normalization function provided as a closure.
     Custom(fn(&mut [T])),
 }
 
@@ -300,7 +300,7 @@ impl<T: FftNum> FftHandler<T> {
         }
     }
 
-    /// Change normalization
+    /// This method allows modifying the normalization applied to the backward transform. See [`Normalization`] for more details.
     #[must_use]
     pub fn normalization(mut self, norm: Normalization<Complex<T>>) -> Self {
         self.norm = norm;
@@ -484,7 +484,7 @@ impl<T: FftNum> R2cFftHandler<T> {
         }
     }
 
-    /// Change normalization
+    /// This method allows modifying the normalization applied to the backward transform. See [`Normalization`] for more details.
     #[must_use]
     pub fn normalization(mut self, norm: Normalization<Complex<T>>) -> Self {
         self.norm = norm;
@@ -675,7 +675,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         }
     }
 
-    /// Change normalization
+    /// This method allows modifying the normalization applied to the backward transform. See [`Normalization`] for more details.
     #[must_use]
     pub fn normalization(mut self, norm: Normalization<T>) -> Self {
         self.norm = norm;
