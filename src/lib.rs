@@ -67,6 +67,9 @@
 //! - sse: Enables `rustfft`'s sse feature (enabled by default)
 //! - neon: Enables `rustfft`'s neon feature (enabled by default)
 //!
+//! # Documentation
+//! [docs.rs](https://docs.rs/ndrustfft/)
+//!
 //! # Versions
 //! [Changelog](CHANGELOG.md)
 #![warn(missing_docs)]
