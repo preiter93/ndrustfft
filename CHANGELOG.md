@@ -1,6 +1,11 @@
 Released
 --------
 
+0.4.4 - 17 April 2024
+===================
+
+- Improved documentation
+
 0.4.3 - 17 April 2024
 ===================
 
