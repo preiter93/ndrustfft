@@ -863,10 +863,8 @@ mod test {
         }
     }
 
-    fn approx_eq_complex<A, S, D>(
-        result: &ArrayBase<S, D>,
-        expected: &ArrayBase<S, D>,
-    ) where
+    fn approx_eq_complex<A, S, D>(result: &ArrayBase<S, D>, expected: &ArrayBase<S, D>)
+    where
         A: FftNum + std::fmt::Display + std::cmp::PartialOrd,
         S: ndarray::Data<Elem = Complex<A>>,
         D: Dimension,
@@ -923,8 +921,7 @@ mod test {
             [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
         ];
 
-        let mut solution: Array2<Complex<f64>> =
-            Array2::zeros(solution_re.raw_dim());
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
         for (s, (s_re, s_im)) in solution
             .iter_mut()
             .zip(solution_re.iter().zip(solution_im.iter()))
@@ -971,8 +968,7 @@ mod test {
             [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
         ];
 
-        let mut solution: Array2<Complex<f64>> =
-            Array2::zeros(solution_re.raw_dim());
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
         for (s, (s_re, s_im)) in solution
             .iter_mut()
             .zip(solution_re.iter().zip(solution_im.iter()))
@@ -1018,8 +1014,7 @@ mod test {
             [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
         ];
 
-        let mut solution: Array2<Complex<f64>> =
-            Array2::zeros(solution_re.raw_dim());
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
         for (s, (s_re, s_im)) in solution
             .iter_mut()
             .zip(solution_re.iter().zip(solution_im.iter()))
@@ -1065,8 +1060,7 @@ mod test {
             [0., 0.633, -3.339, 0.],
         ];
 
-        let mut solution: Array2<Complex<f64>> =
-            Array2::zeros(solution_re.raw_dim());
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
         for (s, (s_re, s_im)) in solution
             .iter_mut()
             .zip(solution_re.iter().zip(solution_im.iter()))
@@ -1113,8 +1107,7 @@ mod test {
             [0., 0.633, -3.339, 0.],
         ];
 
-        let mut solution: Array2<Complex<f64>> =
-            Array2::zeros(solution_re.raw_dim());
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
         for (s, (s_re, s_im)) in solution
             .iter_mut()
             .zip(solution_re.iter().zip(solution_im.iter()))
