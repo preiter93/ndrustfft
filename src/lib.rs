@@ -105,7 +105,7 @@ macro_rules! create_transform {
         pub fn $i<R, S, T, D>(
             input: &ArrayBase<R, D>,
             output: &mut ArrayBase<S, D>,
-            handler: &mut $h,
+            handler: &$h,
             axis: usize,
         ) where
             T: FftNum + FloatConst,
@@ -175,7 +175,7 @@ macro_rules! create_transform_par {
         pub fn $i<R, S, T, D>(
             input: &ArrayBase<R, D>,
             output: &mut ArrayBase<S, D>,
-            handler: &mut $h,
+            handler: &$h,
             axis: usize,
         ) where
             T: FftNum + FloatConst,
