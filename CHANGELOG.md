@@ -1,6 +1,11 @@
 Released
 --------
 
+0.4.5 - 27 June 2024
+===================
+
+- Use non-mutable references to handlers
+ 
 0.4.4 - 17 April 2024
 ===================
 
