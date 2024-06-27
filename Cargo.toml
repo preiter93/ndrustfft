@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 ndarray = { version = "0.15" }
-rustfft = { version = "6", default-features = false }
+rustfft = { version = "6.2.0", default-features = false }
 num-traits = "0.2"
 rustdct = "0.7"
 realfft = "3"
