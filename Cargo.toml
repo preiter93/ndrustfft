@@ -1,6 +1,6 @@
 [package]
 name = "ndrustfft"
-version = "0.4.5"
+version = "0.5.0"
 authors = ["preiter <phil.reiter93@gmail.com>"]
 edition = "2018"
 description = "N-dimensional FFT, real-to-complex FFT and real-to-real DCT"
@@ -14,7 +14,7 @@ name = "ndrustfft"
 path = "src/lib.rs"
 
 [dependencies]
-ndarray = { version = "0.15" }
+ndarray = { version = "0.16" }
 rustfft = { version = "6", default-features = false }
 num-traits = "0.2"
 rustdct = "0.7"
