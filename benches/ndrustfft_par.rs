@@ -30,6 +30,28 @@ pub fn bench_fft2d(c: &mut Criterion) {
 }
 
 #[cfg(feature = "parallel")]
+pub fn bench_fft2d_inplace(c: &mut Criterion) {
+    let mut group = c.benchmark_group("fft2d_inplace_par");
+    for n in FFT_SIZES.iter() {
+        let name = format!("Size: {}", *n);
+        let mut data = Array::<Complex<f64>, Dim<[Ix; 2]>>::zeros((*n, *n));
+        for (i, v) in data.iter_mut().enumerate() {
+            v.re = i as f64;
+            v.im = i as f64;
+        }
+        let mut handler: FftHandler<f64> = FftHandler::new(*n);
+        group.bench_function(&name, |b| {
+            b.iter(|| {
+                use ndrustfft::ndfft_inplace_par;
+
+                ndfft_inplace_par(&mut data.view_mut(), &mut handler, 0)
+            })
+        });
+    }
+    group.finish();
+}
+
+#[cfg(feature = "parallel")]
 pub fn bench_rfft2d(c: &mut Criterion) {
     let mut group = c.benchmark_group("rfft2d_par");
     for n in FFT_SIZES.iter() {
@@ -67,7 +89,13 @@ pub fn bench_dct2d(c: &mut Criterion) {
 }
 
 #[cfg(feature = "parallel")]
-criterion_group!(benches, bench_fft2d, bench_rfft2d, bench_dct2d);
+criterion_group!(
+    benches,
+    bench_fft2d,
+    bench_fft2d_inplace,
+    bench_rfft2d,
+    bench_dct2d
+);
 #[cfg(feature = "parallel")]
 criterion_main!(benches);
 

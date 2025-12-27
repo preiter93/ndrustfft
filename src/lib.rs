@@ -17,17 +17,17 @@
 //!
 //! ## Available transforms
 //! ### Complex-to-complex
-//! - `fft` : [`ndfft`], [`ndfft_inplace`], [`ndfft_par`]
-//! - `ifft`: [`ndifft`],[`ndifft_inplace`],[`ndifft_par`]
+//! - `fft` : [`ndfft`],[`ndfft_inplace`],[`ndfft_par`],[`ndfft_inplace_par`]
+//! - `ifft`: [`ndifft`],[`ndifft_inplace`],[`ndifft_par`],[`ndfft_inplace_par`]
 //! ### Real-to-complex
 //! - `fft_r2c` : [`ndfft_r2c`], [`ndfft_r2c_par`],
 //! ### Complex-to-real
 //! - `ifft_r2c`: [`ndifft_r2c`],[`ndifft_r2c_par`]
 //! ### Real-to-real
-//! - `dct1`: [`nddct1`],[`nddct1_inplace`],[`nddct1_par`]
-//! - `dct2`: [`nddct2`],[`nddct2_inplace`],[`nddct2_par`]
-//! - `dct3`: [`nddct3`],[`nddct3_inplace`],[`nddct3_par`]
-//! - `dct4`: [`nddct4`],[`nddct4_inplace`],[`nddct4_par`]
+//! - `dct1`: [`nddct1`],[`nddct1_inplace`],[`nddct1_par`],[`nddct1_inplace_par`]
+//! - `dct2`: [`nddct2`],[`nddct2_inplace`],[`nddct2_par`],[`nddct2_inplace_par`]
+//! - `dct3`: [`nddct3`],[`nddct3_inplace`],[`nddct3_par`],[`nddct3_inplace_par`]
+//! - `dct4`: [`nddct4`],[`nddct4_inplace`],[`nddct4_par`],[`nddct4_inplace_par`]
 //!
 //! ## Example
 //! 2-Dimensional real-to-complex fft along first axis
@@ -253,31 +253,80 @@ macro_rules! create_transform_par {
                     output.swap_axes(outer_axis, axis);
                 }
             } else {
-            Zip::from(input.lanes(Axis(axis)))
-                .and(output.lanes_mut(Axis(axis)))
-                .par_for_each(|x, mut y| {
-                    if let Some(x_s) = x.as_slice() {
-                        if let Some(y_s) = y.as_slice_mut() {
-                            // x and y are contiguous
-                            handler.$p(x_s, y_s);
+                Zip::from(input.lanes(Axis(axis)))
+                    .and(output.lanes_mut(Axis(axis)))
+                    .par_for_each(|x, mut y| {
+                        if let Some(x_s) = x.as_slice() {
+                            if let Some(y_s) = y.as_slice_mut() {
+                                // x and y are contiguous
+                                handler.$p(x_s, y_s);
+                            } else {
+                                let mut outvec = Array1::zeros(n);
+                                // x is contiguous, y is not contiguous
+                                handler.$p(x_s, outvec.as_slice_mut().unwrap());
+                                y.assign(&outvec);
+                            }
                         } else {
-                            let mut outvec = Array1::zeros(n);
-                            // x is contiguous, y is not contiguous
-                            handler.$p(x_s, outvec.as_slice_mut().unwrap());
-                            y.assign(&outvec);
+                            if let Some(y_s) = y.as_slice_mut() {
+                                // x is not contiguous, y is contiguous
+                                handler.$p(&x.to_vec(), y_s);
+                            } else {
+                                let mut outvec = Array1::zeros(n);
+                                // x and y are not contiguous
+                                handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
+                                y.assign(&outvec);
+                            }
                         }
-                    } else {
-                        if let Some(y_s) = y.as_slice_mut() {
-                            // x is not contiguous, y is contiguous
-                            handler.$p(&x.to_vec(), y_s);
+                    });
+            }
+        }
+    };
+}
+
+#[cfg(feature = "parallel")]
+macro_rules! create_transform_inplace_par {
+    (
+        $(#[$meta:meta])* $i: ident, $a: ty, $h: ty, $p: ident
+    ) => {
+        $(#[$meta])*
+        pub fn $i<R, T, D>(
+            input: &mut ArrayBase<R, D>,
+            handler: &$h,
+            axis: usize,
+        ) where
+            T: FftNum + FloatConst,
+            R: Data<Elem = $a> + DataMut,
+            D: Dimension,
+        {
+            let n = input.shape()[axis];
+            if input.is_standard_layout() {
+                let outer_axis = input.ndim() - 1;
+                if axis == outer_axis {
+                    Zip::from(input.rows_mut())
+                        .par_for_each(|mut x| {
+                            handler.$p(x.as_slice_mut().unwrap());
+                        });
+                } else {
+                    input.swap_axes(outer_axis, axis);
+                    Zip::from(input.rows_mut())
+                        .par_for_each(|mut x| {
+                            let mut tmp = Array1::zeros(n);
+                            handler.$p(tmp.as_slice_mut().unwrap());
+                            x.assign(&tmp);
+                        });
+                    input.swap_axes(outer_axis, axis);
+                }
+            } else {
+                Zip::from(input.lanes_mut(Axis(axis)))
+                    .par_for_each(|mut x| {
+                        if let Some(x_s) = x.as_slice_mut() {
+                            handler.$p(x_s);
                         } else {
-                            let mut outvec = Array1::zeros(n);
-                            // x and y are not contiguous
-                            handler.$p(&x.to_vec(), outvec.as_slice_mut().unwrap());
-                            y.assign(&outvec);
+                            let mut tmp = Array1::zeros(n);
+                            handler.$p(tmp.as_slice_mut().unwrap());
+                            x.assign(&tmp);
                         }
-                    }
-                });
+                    });
             }
         }
     };
@@ -516,6 +565,17 @@ create_transform_par!(
 );
 
 #[cfg(feature = "parallel")]
+create_transform_inplace_par!(
+    /// Complex-to-complex Fourier Transform (inplace, parallel).
+    ///
+    /// Further infos: see [`ndfft`]
+    ndfft_inplace_par,
+    Complex<T>,
+    FftHandler<T>,
+    fft_lane_inplace
+);
+
+#[cfg(feature = "parallel")]
 create_transform_par!(
     /// Complex-to-complex inverse Fourier Transform (parallel).
     ///
@@ -525,6 +585,17 @@ create_transform_par!(
     Complex<T>,
     FftHandler<T>,
     ifft_lane
+);
+
+#[cfg(feature = "parallel")]
+create_transform_inplace_par!(
+    /// Complex-to-complex inverse Fourier Transform (inplace, parallel).
+    ///
+    /// Further infos: see [`ndifft`]
+    ndifft_inplace_par,
+    Complex<T>,
+    FftHandler<T>,
+    ifft_lane_inplace
 );
 
 /// # *n*-dimensional real-to-complex Fourier Transform.
@@ -945,7 +1016,7 @@ create_transform_inplace!(
 
 #[cfg(feature = "parallel")]
 create_transform_par!(
-    /// Real-to-real Discrete Cosine Transform of type 1 DCT-I  (parallel).
+    /// Real-to-real Discrete Cosine Transform of type 1 DCT-I (parallel).
     ///
     /// Further infos: see [`nddct1`]
     nddct1_par,
@@ -953,6 +1024,15 @@ create_transform_par!(
     T,
     DctHandler<T>,
     dct1_lane
+);
+
+#[cfg(feature = "parallel")]
+create_transform_inplace_par!(
+    /// Real-to-real Discrete Cosine Transform of type 1 DCT-1 (inplace, parallel).
+    nddct1_inplace_par,
+    T,
+    DctHandler<T>,
+    dct1_lane_inplace
 );
 
 create_transform!(
@@ -974,12 +1054,21 @@ create_transform_inplace!(
 
 #[cfg(feature = "parallel")]
 create_transform_par!(
-    /// Real-to-real Discrete Cosine Transform of type 2 DCT-2  (parallel).
+    /// Real-to-real Discrete Cosine Transform of type 2 DCT-2 (parallel).
     nddct2_par,
     T,
     T,
     DctHandler<T>,
     dct2_lane
+);
+
+#[cfg(feature = "parallel")]
+create_transform_inplace_par!(
+    /// Real-to-real Discrete Cosine Transform of type 2 DCT-2 (inplace, parallel).
+    nddct2_inplace_par,
+    T,
+    DctHandler<T>,
+    dct2_lane_inplace
 );
 
 create_transform!(
@@ -1001,12 +1090,21 @@ create_transform_inplace!(
 
 #[cfg(feature = "parallel")]
 create_transform_par!(
-    /// Real-to-real Discrete Cosine Transform of type 3 DCT-3  (parallel).
+    /// Real-to-real Discrete Cosine Transform of type 3 DCT-3 (parallel).
     nddct3_par,
     T,
     T,
     DctHandler<T>,
     dct3_lane
+);
+
+#[cfg(feature = "parallel")]
+create_transform_inplace_par!(
+    /// Real-to-real Discrete Cosine Transform of type 3 DCT-3 (inplace, parallel).
+    nddct3_inplace_par,
+    T,
+    DctHandler<T>,
+    dct3_lane_inplace
 );
 
 create_transform!(
@@ -1028,12 +1126,21 @@ create_transform_inplace!(
 
 #[cfg(feature = "parallel")]
 create_transform_par!(
-    /// Real-to-real Discrete Cosine Transform of type 4 DCT-4  (parallel).
+    /// Real-to-real Discrete Cosine Transform of type 4 DCT-4 (parallel).
     nddct4_par,
     T,
     T,
     DctHandler<T>,
     dct4_lane
+);
+
+#[cfg(feature = "parallel")]
+create_transform_inplace_par!(
+    /// Real-to-real Discrete Cosine Transform of type 4 DCT-4 (inplace, parallel).
+    nddct4_inplace_par,
+    T,
+    DctHandler<T>,
+    dct4_lane_inplace
 );
 
 /// Tests
@@ -1140,6 +1247,56 @@ mod test {
     }
 
     #[test]
+    fn test_fft_axis0() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        // Transpose the arrays
+        let solution_re_t = solution_re.t().to_owned();
+        let solution_im_t = solution_im.t().to_owned();
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re_t.iter().zip(solution_im_t.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex().t().to_owned();
+        let v_copy = v.clone();
+        let (nx, ny) = (v.shape()[0], v.shape()[1]);
+        let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft(&v, &mut vhat, &mut handler, 0);
+        ndifft(&vhat, &mut v, &mut handler, 0);
+
+        // Assert
+        approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[test]
     fn test_fft_inplace() {
         // Solution from np.fft.fft
         let solution_re = array![
@@ -1180,6 +1337,54 @@ mod test {
         approx_eq_complex(&v, &solution);
 
         ndifft_inplace(&mut v, &mut handler, 1);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_inplace_axis0() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        // Transpose the arrays
+        let solution_re_t = solution_re.t().to_owned();
+        let solution_im_t = solution_im.t().to_owned();
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re_t.iter().zip(solution_im_t.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex().t().to_owned();
+        let v_copy = v.clone();
+        let (nx, _) = (v.shape()[0], v.shape()[1]);
+        let mut handler: FftHandler<f64> = FftHandler::new(nx);
+
+        // Transform
+        ndfft_inplace(&mut v, &mut handler, 0);
+        approx_eq_complex(&v, &solution);
+
+        ndifft_inplace(&mut v, &mut handler, 0);
         approx_eq_complex(&v, &v_copy);
     }
 
@@ -1230,6 +1435,100 @@ mod test {
         approx_eq_complex(&v, &v_copy);
     }
 
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_fft_inplace_par() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex();
+        let v_copy = v.clone();
+        let (nx, _) = (v.shape()[0], v.shape()[1]);
+        let mut handler: FftHandler<f64> = FftHandler::new(nx);
+
+        // Transform
+        ndfft_inplace_par(&mut v, &mut handler, 1);
+        approx_eq_complex(&v, &solution);
+
+        ndifft_inplace_par(&mut v, &mut handler, 1);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_fft_inplace_par_axis0() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        // Transpose the arrays
+        let solution_re_t = solution_re.t().to_owned();
+        let solution_im_t = solution_im.t().to_owned();
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re_t.iter().zip(solution_im_t.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex().t().to_owned();
+        let v_copy = v.clone();
+        let (nx, _) = (v.shape()[0], v.shape()[1]);
+        let mut handler: FftHandler<f64> = FftHandler::new(nx);
+
+        // Transform
+        ndfft_inplace_par(&mut v, &mut handler, 0);
+        approx_eq_complex(&v, &solution);
+
+        ndifft_inplace_par(&mut v, &mut handler, 0);
+        approx_eq_complex(&v, &v_copy);
+    }
+
     #[test]
     fn test_fft_f_layout() {
         // Solution from np.fft.fft
@@ -1273,6 +1572,50 @@ mod test {
 
         // Assert
         approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_inplace_f_layout() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex_f();
+        let v_copy = v.clone();
+        let (_, ny) = (v.shape()[0], v.shape()[1]);
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft_inplace(&mut v, &mut handler, 1);
+        approx_eq_complex(&v, &solution);
+
+        ndifft_inplace(&mut v, &mut handler, 1);
         approx_eq_complex(&v, &v_copy);
     }
 
