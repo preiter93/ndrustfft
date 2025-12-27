@@ -17,17 +17,17 @@
 //!
 //! ## Available transforms
 //! ### Complex-to-complex
-//! - `fft` : [`ndfft`], [`ndfft_par`]
-//! - `ifft`: [`ndifft`],[`ndifft_par`]
+//! - `fft` : [`ndfft`], [`ndfft_inplace`], [`ndfft_par`]
+//! - `ifft`: [`ndifft`],[`ndifft_inplace`],[`ndifft_par`]
 //! ### Real-to-complex
 //! - `fft_r2c` : [`ndfft_r2c`], [`ndfft_r2c_par`],
 //! ### Complex-to-real
 //! - `ifft_r2c`: [`ndifft_r2c`],[`ndifft_r2c_par`]
 //! ### Real-to-real
-//! - `dct1`: [`nddct1`],[`nddct1_par`]
-//! - `dct2`: [`nddct2`],[`nddct2_par`]
-//! - `dct3`: [`nddct3`],[`nddct3_par`]
-//! - `dct4`: [`nddct4`],[`nddct4_par`]
+//! - `dct1`: [`nddct1`],[`nddct1_inplace`],[`nddct1_par`]
+//! - `dct2`: [`nddct2`],[`nddct2_inplace`],[`nddct2_par`]
+//! - `dct3`: [`nddct3`],[`nddct3_inplace`],[`nddct3_par`]
+//! - `dct4`: [`nddct4`],[`nddct4_inplace`],[`nddct4_par`]
 //!
 //! ## Example
 //! 2-Dimensional real-to-complex fft along first axis
@@ -166,6 +166,52 @@ macro_rules! create_transform {
     };
 }
 
+macro_rules! create_transform_inplace {
+    (
+        $(#[$meta:meta])* $i: ident, $a: ty, $h: ty, $p: ident
+    ) => {
+        $(#[$meta])*
+        pub fn $i<R, T, D>(
+            data: &mut ArrayBase<R, D>,
+            handler: &$h,
+            axis: usize,
+        ) where
+            T: FftNum + FloatConst,
+            R: DataMut<Elem = $a>,
+            D: Dimension,
+        {
+            if data.is_standard_layout() {
+                let outer_axis = data.ndim() - 1;
+                if axis == outer_axis {
+                    for mut row in data.rows_mut() {
+                        handler.$p(row.as_slice_mut().unwrap());
+                    }
+                } else {
+                    let mut temp = Array1::zeros(data.shape()[axis]);
+                    data.swap_axes(outer_axis, axis);
+                    for mut row in data.rows_mut() {
+                        temp.assign(&row);
+                        handler.$p(temp.as_slice_mut().unwrap());
+                        row.assign(&temp);
+                    }
+                    data.swap_axes(outer_axis, axis);
+                }
+            } else {
+                Zip::from(data.lanes_mut(Axis(axis)))
+                    .for_each(|mut lane| {
+                        if let Some(slice) = lane.as_slice_mut() {
+                            handler.$p(slice);
+                        } else {
+                            let mut temp = lane.to_vec();
+                            handler.$p(&mut temp);
+                            lane.assign(&Array1::from(temp));
+                        }
+                    });
+            }
+        }
+    };
+}
+
 #[cfg(feature = "parallel")]
 macro_rules! create_transform_par {
     (
@@ -280,8 +326,8 @@ impl<T: FftNum> FftHandler<T> {
     /// # Arguments
     ///
     /// * `n` - Length of array along axis of which fft will be performed.
-    /// The size of the complex array after the fft is performed will be of
-    /// size *n*.
+    ///   The size of the complex array after the fft is performed will be of
+    ///   size *n*.
     ///
     /// # Examples
     ///
@@ -327,6 +373,22 @@ impl<T: FftNum> FftHandler<T> {
             Normalization::None => (),
             Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
+        }
+    }
+
+    fn fft_lane_inplace(&self, data: &mut [Complex<T>]) {
+        Self::assert_size(self.n, data.len());
+        self.plan_fwd.process(data);
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn ifft_lane_inplace(&self, data: &mut [Complex<T>]) {
+        Self::assert_size(self.n, data.len());
+        self.plan_bwd.process(data);
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Default => Self::norm_default(data),
+            Normalization::Custom(f) => f(data),
         }
     }
 
@@ -396,6 +458,51 @@ create_transform!(
     ifft_lane
 );
 
+create_transform_inplace!(
+    /// Complex-to-complex Fourier Transform (inplace, serial).
+    /// # Example
+    /// ```
+    /// use ndarray::{Array2, Dim, Ix};
+    /// use ndrustfft::{ndfft_inplace, Complex, FftHandler};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array2::<Complex<f64>>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     v.re = i as f64;
+    ///     v.im = -1.0*i as f64;
+    /// }
+    /// let mut handler: FftHandler<f64> = FftHandler::new(ny);
+    /// ndfft_inplace(&mut data, &mut handler, 1);
+    /// ```
+    ndfft_inplace,
+    Complex<T>,
+    FftHandler<T>,
+    fft_lane_inplace
+);
+
+create_transform_inplace!(
+    /// Complex-to-complex Inverse Fourier Transform (inplace, serial).
+    /// # Example
+    /// ```
+    /// use ndarray::Array2;
+    /// use ndrustfft::{ndfft_inplace, ndifft_inplace, Complex, FftHandler};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array2::<Complex<f64>>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     v.re = i as f64;
+    ///     v.im = -1.0*i as f64;
+    /// }
+    /// let mut handler: FftHandler<f64> = FftHandler::new(ny);
+    /// ndfft_inplace(&mut data,  &mut handler, 1);
+    /// ndifft_inplace(&mut data, &mut handler, 1);
+    /// ```
+    ndifft_inplace,
+    Complex<T>,
+    FftHandler<T>,
+    ifft_lane_inplace
+);
+
 #[cfg(feature = "parallel")]
 create_transform_par!(
     /// Complex-to-complex Fourier Transform (parallel).
@@ -463,8 +570,8 @@ impl<T: FftNum> R2cFftHandler<T> {
     /// # Arguments
     ///
     /// * `n` - Length of array along axis of which fft will be performed.
-    /// The size of the complex array after the fft is performed will be of
-    /// size *n / 2 + 1*.
+    ///   The size of the complex array after the fft is performed will be of
+    ///   size *n / 2 + 1*.
     ///
     /// # Examples
     ///
@@ -516,7 +623,7 @@ impl<T: FftNum> R2cFftHandler<T> {
         // First element must be real
         buffer[0].im = T::zero();
         // If original vector is even, last element must be real
-        if self.n % 2 == 0 {
+        if self.n.is_multiple_of(2) {
             buffer[self.m - 1].im = T::zero();
         }
         self.plan_bwd.process(&mut buffer, out).unwrap();
@@ -653,7 +760,7 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
     /// # Arguments
     ///
     /// * `n` - Length of array along axis of which dct will be performed.
-    /// The size and type of the array will be the same after the transform.
+    ///   The size and type of the array will be the same after the transform.
     ///
     /// # Examples
     ///
@@ -697,6 +804,16 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         self.plan_dct1.process_dct1(out);
     }
 
+    fn dct1_lane_inplace(&self, data: &mut [T]) {
+        Self::assert_size(self, data.len());
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Default => Self::norm_default(data),
+            Normalization::Custom(f) => f(data),
+        }
+        self.plan_dct1.process_dct1(data);
+    }
+
     fn dct2_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
@@ -709,6 +826,16 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
         self.plan_dct2.process_dct2(out);
     }
 
+    fn dct2_lane_inplace(&self, data: &mut [T]) {
+        Self::assert_size(self, data.len());
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Default => Self::norm_default(data),
+            Normalization::Custom(f) => f(data),
+        }
+        self.plan_dct2.process_dct2(data);
+    }
+
     fn dct3_lane(&self, data: &[T], out: &mut [T]) {
         Self::assert_size(self, data.len());
         Self::assert_size(self, out.len());
@@ -718,7 +845,17 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
             Normalization::Default => Self::norm_default(out),
             Normalization::Custom(f) => f(out),
         }
-        self.plan_dct3.process_dct3(out);
+        self.plan_dct2.process_dct3(out);
+    }
+
+    fn dct3_lane_inplace(&self, data: &mut [T]) {
+        Self::assert_size(self, data.len());
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Default => Self::norm_default(data),
+            Normalization::Custom(f) => f(data),
+        }
+        self.plan_dct3.process_dct3(data);
     }
 
     fn dct4_lane(&self, data: &[T], out: &mut [T]) {
@@ -731,6 +868,16 @@ impl<T: FftNum + FloatConst> DctHandler<T> {
             Normalization::Custom(f) => f(out),
         }
         self.plan_dct4.process_dct4(out);
+    }
+
+    fn dct4_lane_inplace(&self, data: &mut [T]) {
+        Self::assert_size(self, data.len());
+        match self.norm {
+            Normalization::None => (),
+            Normalization::Default => Self::norm_default(data),
+            Normalization::Custom(f) => f(data),
+        }
+        self.plan_dct4.process_dct4(data);
     }
 
     fn norm_default(data: &mut [T]) {
@@ -774,6 +921,28 @@ create_transform!(
     dct1_lane
 );
 
+create_transform_inplace!(
+    /// Real-to-real Discrete Cosine Transform of type 1 DCT-I (inplace, serial).
+    ///
+    /// # Example
+    /// ```
+    /// use ndarray::Array2;
+    /// use ndrustfft::{DctHandler, nddct1_inplace};
+    ///
+    /// let (nx, ny) = (6, 4);
+    /// let mut data = Array2::<f64>::zeros((nx, ny));
+    /// for (i, v) in data.iter_mut().enumerate() {
+    ///     *v = i as f64;
+    /// }
+    /// let mut handler: DctHandler<f64> = DctHandler::new(ny);
+    /// nddct1_inplace(&mut data, &mut handler, 1);
+    /// ```
+    nddct1_inplace,
+    T,
+    DctHandler<T>,
+    dct1_lane_inplace
+);
+
 #[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 1 DCT-I  (parallel).
@@ -795,6 +964,14 @@ create_transform!(
     dct2_lane
 );
 
+create_transform_inplace!(
+    /// Real-to-real Discrete Cosine Transform of type 2 DCT-2 (inplace, serial).
+    nddct2_inplace,
+    T,
+    DctHandler<T>,
+    dct2_lane_inplace
+);
+
 #[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 2 DCT-2  (parallel).
@@ -814,6 +991,14 @@ create_transform!(
     dct3_lane
 );
 
+create_transform_inplace!(
+    /// Real-to-real Discrete Cosine Transform of type 3 DCT-3 (inplace, serial).
+    nddct3_inplace,
+    T,
+    DctHandler<T>,
+    dct3_lane_inplace
+);
+
 #[cfg(feature = "parallel")]
 create_transform_par!(
     /// Real-to-real Discrete Cosine Transform of type 3 DCT-3  (parallel).
@@ -831,6 +1016,14 @@ create_transform!(
     T,
     DctHandler<T>,
     dct4_lane
+);
+
+create_transform_inplace!(
+    /// Real-to-real Discrete Cosine Transform of type 4 DCT-4 (inplace, serial).
+    nddct4_inplace,
+    T,
+    DctHandler<T>,
+    dct4_lane_inplace
 );
 
 #[cfg(feature = "parallel")]
@@ -943,6 +1136,50 @@ mod test {
 
         // Assert
         approx_eq_complex(&vhat, &solution);
+        approx_eq_complex(&v, &v_copy);
+    }
+
+    #[test]
+    fn test_fft_inplace() {
+        // Solution from np.fft.fft
+        let solution_re = array![
+            [0.61, 3.105, 2.508, 0.048, -3.652, -2.019],
+            [2.795, 0.612, 0.219, 1.179, -2.801, 3.276],
+            [2.259, 0.601, 0.045, 0.979, 4.506, 0.118],
+            [-0.296, -0.896, 0.544, -4.282, 3.544, 6.288],
+            [0.573, -0.96, -3.85, -2.613, -0.461, 4.467],
+            [3.978, -2.229, 0.133, 1.154, -6.544, -0.962],
+        ];
+
+        let solution_im = array![
+            [0.61, -2.019, -3.652, 0.048, 2.508, 3.105],
+            [2.795, 3.276, -2.801, 1.179, 0.219, 0.612],
+            [2.259, 0.118, 4.506, 0.979, 0.045, 0.601],
+            [-0.296, 6.288, 3.544, -4.282, 0.544, -0.896],
+            [0.573, 4.467, -0.461, -2.613, -3.85, -0.96],
+            [3.978, -0.962, -6.544, 1.154, 0.133, -2.229],
+        ];
+
+        let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re.raw_dim());
+        for (s, (s_re, s_im)) in solution
+            .iter_mut()
+            .zip(solution_re.iter().zip(solution_im.iter()))
+        {
+            s.re = *s_re;
+            s.im = *s_im;
+        }
+
+        // Setup
+        let mut v = test_matrix_complex();
+        let v_copy = v.clone();
+        let (_, ny) = (v.shape()[0], v.shape()[1]);
+        let mut handler: FftHandler<f64> = FftHandler::new(ny);
+
+        // Transform
+        ndfft_inplace(&mut v, &mut handler, 1);
+        approx_eq_complex(&v, &solution);
+
+        ndifft_inplace(&mut v, &mut handler, 1);
         approx_eq_complex(&v, &v_copy);
     }
 
@@ -1224,6 +1461,30 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
+
+    #[test]
+    fn test_dct1_inplace() {
+        // Solution from scipy.fft.dct(x, type=1)
+        let solution = array![
+            [2.469, 4.259, 0.6, 0.04, -4.957, -1.353],
+            [3.953, -0.374, 4.759, -0.436, -2.643, 2.235],
+            [2.632, 0.818, -1.609, 1.053, 5.008, 1.008],
+            [-3.652, -2.628, 4.81, 2.632, 4.666, -7.138],
+            [-0.835, -2.982, 4.105, -3.192, 1.265, -2.297],
+            [8.743, -2.422, 1.167, -0.841, -7.506, 3.011],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let (_, ny) = (v.shape()[0], v.shape()[1]);
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
+        nddct1_inplace(&mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq(&v, &solution);
     }
 
     #[cfg(feature = "parallel")]

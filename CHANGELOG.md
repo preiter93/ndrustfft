@@ -1,6 +1,12 @@
 Released
 --------
 
+0.7.1 - 27 Dec 2025
+===================
+
+- Add inplace variants for ndfft (serial)
+- Add inplace variants for ndct (serial)
+
 0.7.0 - 08 Nov 2025
 ===================
 
