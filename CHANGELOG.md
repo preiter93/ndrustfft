@@ -1,13 +1,13 @@
 Released
 --------
 
-0.7.1 - 27 Dec 2025
+0.6.1 - 27 Dec 2025
 ===================
 
-- Add inplace variants for ndfft (serial)
-- Add inplace variants for ndct (serial)
+- Add inplace variants for ndfft
+- Add inplace variants for ndct
 
-0.7.0 - 08 Nov 2025
+0.6.0 - 08 Nov 2025
 ===================
 
 - Bump ndarray to 0.17
