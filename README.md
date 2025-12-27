@@ -19,17 +19,17 @@ which leverages the parallel iterators of the ndarray crate.
 
 ### Available transforms
 #### Complex-to-complex
-- `fft` : [`ndfft`], [`ndfft_par`]
-- `ifft`: [`ndifft`],[`ndifft_par`]
+- `fft` : [`ndfft`], [`ndfft_inplace`], [`ndfft_par`]
+- `ifft`: [`ndifft`],[`ndifft_inplace`],[`ndifft_par`]
 #### Real-to-complex
 - `fft_r2c` : [`ndfft_r2c`], [`ndfft_r2c_par`],
 #### Complex-to-real
 - `ifft_r2c`: [`ndifft_r2c`],[`ndifft_r2c_par`]
 #### Real-to-real
-- `dct1`: [`nddct1`],[`nddct1_par`]
-- `dct2`: [`nddct2`],[`nddct2_par`]
-- `dct3`: [`nddct3`],[`nddct3_par`]
-- `dct4`: [`nddct4`],[`nddct4_par`]
+- `dct1`: [`nddct1`],[`nddct1_inplace`],[`nddct1_par`]
+- `dct2`: [`nddct2`],[`nddct2_inplace`],[`nddct2_par`]
+- `dct3`: [`nddct3`],[`nddct3_inplace`],[`nddct3_par`]
+- `dct4`: [`nddct4`],[`nddct4_inplace`],[`nddct4_par`]
 
 ### Example
 2-Dimensional real-to-complex fft along first axis
