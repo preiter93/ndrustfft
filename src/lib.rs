@@ -311,6 +311,7 @@ macro_rules! create_transform_inplace_par {
                     Zip::from(input.rows_mut())
                         .par_for_each(|mut x| {
                             let mut tmp = Array1::zeros(n);
+                            tmp.assign(&x);
                             handler.$p(tmp.as_slice_mut().unwrap());
                             x.assign(&tmp);
                         });
@@ -1268,8 +1269,8 @@ mod test {
         ];
 
         // Transpose the arrays
-        let solution_re_t = solution_re.t().to_owned();
-        let solution_im_t = solution_im.t().to_owned();
+        let solution_re_t = solution_re.t().as_standard_layout().to_owned();
+        let solution_im_t = solution_im.t().as_standard_layout().to_owned();
 
         let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
         for (s, (s_re, s_im)) in solution
@@ -1281,7 +1282,7 @@ mod test {
         }
 
         // Setup
-        let mut v = test_matrix_complex().t().to_owned();
+        let mut v = test_matrix_complex().t().as_standard_layout().to_owned();
         let v_copy = v.clone();
         let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
@@ -1362,8 +1363,8 @@ mod test {
         ];
 
         // Transpose the arrays
-        let solution_re_t = solution_re.t().to_owned();
-        let solution_im_t = solution_im.t().to_owned();
+        let solution_re_t = solution_re.t().as_standard_layout().to_owned();
+        let solution_im_t = solution_im.t().as_standard_layout().to_owned();
 
         let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
         for (s, (s_re, s_im)) in solution
@@ -1375,7 +1376,7 @@ mod test {
         }
 
         // Setup
-        let mut v = test_matrix_complex().t().to_owned();
+        let mut v = test_matrix_complex().t().as_standard_layout().to_owned();
         let v_copy = v.clone();
         let (nx, _) = (v.shape()[0], v.shape()[1]);
         let mut handler: FftHandler<f64> = FftHandler::new(nx);
@@ -1503,8 +1504,8 @@ mod test {
         ];
 
         // Transpose the arrays
-        let solution_re_t = solution_re.t().to_owned();
-        let solution_im_t = solution_im.t().to_owned();
+        let solution_re_t = solution_re.t().as_standard_layout().to_owned();
+        let solution_im_t = solution_im.t().as_standard_layout().to_owned();
 
         let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
         for (s, (s_re, s_im)) in solution
@@ -1516,7 +1517,7 @@ mod test {
         }
 
         // Setup
-        let mut v = test_matrix_complex().t().to_owned();
+        let mut v = test_matrix_complex().t().as_standard_layout().to_owned();
         let v_copy = v.clone();
         let (nx, _) = (v.shape()[0], v.shape()[1]);
         let mut handler: FftHandler<f64> = FftHandler::new(nx);
@@ -1970,10 +1971,11 @@ mod test {
             [7.956, -2.873, -2.13, 0.006, -8.988, 2.56],
         ]
         .t()
+        .as_standard_layout()
         .to_owned();
 
         // Setup
-        let mut v = test_matrix().t().to_owned();
+        let mut v = test_matrix().t().as_standard_layout().to_owned();
         let (_, ny) = (v.shape()[0], v.shape()[1]);
         let mut handler: DctHandler<f64> = DctHandler::new(ny);
 
@@ -2007,6 +2009,24 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct2_3d_inplace_par_vs_serial_axis0() {
+        use ndarray::Array3;
+
+        let (length, height, width) = (3, 3, 3);
+        let handler = DctHandler::new(length).normalization(Normalization::None);
+
+        let mut v_par =
+            Array3::from_shape_fn((length, height, width), |(i, j, k)| (i + j + k) as f64);
+        let mut v_ser = v_par.clone();
+
+        nddct2_inplace_par(&mut v_par, &handler, 0);
+        nddct2_inplace(&mut v_ser, &handler, 0);
+
+        approx_eq(&v_par, &v_ser);
     }
 
     #[cfg(feature = "parallel")]
