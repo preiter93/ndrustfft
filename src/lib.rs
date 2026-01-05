@@ -2011,6 +2011,24 @@ mod test {
 
     #[cfg(feature = "parallel")]
     #[test]
+    fn test_dct2_3d_inplace_par_vs_serial_axis0() {
+        use ndarray::Array3;
+
+        let (length, height, width) = (3, 3, 3);
+        let handler = DctHandler::new(length).normalization(Normalization::None);
+
+        let mut v_par =
+            Array3::from_shape_fn((length, height, width), |(i, j, k)| (i + j + k) as f64);
+        let mut v_ser = v_par.clone();
+
+        nddct2_inplace_par(&mut v_par, &handler, 0);
+        nddct2_inplace(&mut v_ser, &handler, 0);
+
+        approx_eq(&v_par, &v_ser);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
     fn test_dct3_par() {
         // Solution from scipy.fft.dct(x, type=3)
         let solution = array![
