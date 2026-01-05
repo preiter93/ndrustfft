@@ -311,6 +311,7 @@ macro_rules! create_transform_inplace_par {
                     Zip::from(input.rows_mut())
                         .par_for_each(|mut x| {
                             let mut tmp = Array1::zeros(n);
+                            tmp.assign(&x);
                             handler.$p(tmp.as_slice_mut().unwrap());
                             x.assign(&tmp);
                         });
