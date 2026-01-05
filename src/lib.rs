@@ -1856,6 +1856,31 @@ mod test {
         approx_eq(&vhat, &solution);
     }
 
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct1_inplace_par() {
+        // Solution from scipy.fft.dct(x, type=1)
+        let solution = array![
+            [2.469, 4.259, 0.6, 0.04, -4.957, -1.353],
+            [3.953, -0.374, 4.759, -0.436, -2.643, 2.235],
+            [2.632, 0.818, -1.609, 1.053, 5.008, 1.008],
+            [-3.652, -2.628, 4.81, 2.632, 4.666, -7.138],
+            [-0.835, -2.982, 4.105, -3.192, 1.265, -2.297],
+            [8.743, -2.422, 1.167, -0.841, -7.506, 3.011],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let (_, ny) = (v.shape()[0], v.shape()[1]);
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
+        nddct1_inplace(&mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq(&v, &solution);
+    }
+
     #[test]
     fn test_dct2() {
         // Solution from scipy.fft.dct(x, type=2)
@@ -1905,6 +1930,58 @@ mod test {
 
         // Assert
         approx_eq(&vhat, &solution);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct2_inplace_par() {
+        // Solution from scipy.fft.dct(x, type=2)
+        let solution = array![
+            [1.22, 5.25, -1.621, -0.619, -5.906, -1.105],
+            [5.59, -0.209, 4.699, 0.134, -3.907, 1.838],
+            [4.518, 1.721, 0.381, 1.492, 6.138, 0.513],
+            [-0.592, -3.746, 8.262, 1.31, 4.642, -6.125],
+            [1.146, -5.709, 5.75, -4.275, 0.78, -0.963],
+            [7.956, -2.873, -2.13, 0.006, -8.988, 2.56],
+        ];
+
+        // Setup
+        let mut v = test_matrix();
+        let (_, ny) = (v.shape()[0], v.shape()[1]);
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
+        nddct2_inplace_par(&mut v, &mut handler, 1);
+
+        // Assert
+        approx_eq(&v, &solution);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_dct2_inplace_par_axis0() {
+        // Solution from scipy.fft.dct(x, type=2)
+        let solution = array![
+            [1.22, 5.25, -1.621, -0.619, -5.906, -1.105],
+            [5.59, -0.209, 4.699, 0.134, -3.907, 1.838],
+            [4.518, 1.721, 0.381, 1.492, 6.138, 0.513],
+            [-0.592, -3.746, 8.262, 1.31, 4.642, -6.125],
+            [1.146, -5.709, 5.75, -4.275, 0.78, -0.963],
+            [7.956, -2.873, -2.13, 0.006, -8.988, 2.56],
+        ]
+        .t()
+        .to_owned();
+
+        // Setup
+        let mut v = test_matrix().t().to_owned();
+        let (_, ny) = (v.shape()[0], v.shape()[1]);
+        let mut handler: DctHandler<f64> = DctHandler::new(ny);
+
+        // Transform
+        nddct2_inplace_par(&mut v, &mut handler, 0);
+
+        // Assert
+        approx_eq(&v, &solution);
     }
 
     #[test]
