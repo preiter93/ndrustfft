@@ -1269,8 +1269,8 @@ mod test {
         ];
 
         // Transpose the arrays
-        let solution_re_t = solution_re.t().to_owned();
-        let solution_im_t = solution_im.t().to_owned();
+        let solution_re_t = solution_re.t().as_standard_layout().to_owned();
+        let solution_im_t = solution_im.t().as_standard_layout().to_owned();
 
         let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
         for (s, (s_re, s_im)) in solution
@@ -1282,7 +1282,7 @@ mod test {
         }
 
         // Setup
-        let mut v = test_matrix_complex().t().to_owned();
+        let mut v = test_matrix_complex().t().as_standard_layout().to_owned();
         let v_copy = v.clone();
         let (nx, ny) = (v.shape()[0], v.shape()[1]);
         let mut vhat = Array2::<Complex<f64>>::zeros((nx, ny));
@@ -1363,8 +1363,8 @@ mod test {
         ];
 
         // Transpose the arrays
-        let solution_re_t = solution_re.t().to_owned();
-        let solution_im_t = solution_im.t().to_owned();
+        let solution_re_t = solution_re.t().as_standard_layout().to_owned();
+        let solution_im_t = solution_im.t().as_standard_layout().to_owned();
 
         let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
         for (s, (s_re, s_im)) in solution
@@ -1376,7 +1376,7 @@ mod test {
         }
 
         // Setup
-        let mut v = test_matrix_complex().t().to_owned();
+        let mut v = test_matrix_complex().t().as_standard_layout().to_owned();
         let v_copy = v.clone();
         let (nx, _) = (v.shape()[0], v.shape()[1]);
         let mut handler: FftHandler<f64> = FftHandler::new(nx);
@@ -1504,8 +1504,8 @@ mod test {
         ];
 
         // Transpose the arrays
-        let solution_re_t = solution_re.t().to_owned();
-        let solution_im_t = solution_im.t().to_owned();
+        let solution_re_t = solution_re.t().as_standard_layout().to_owned();
+        let solution_im_t = solution_im.t().as_standard_layout().to_owned();
 
         let mut solution: Array2<Complex<f64>> = Array2::zeros(solution_re_t.raw_dim());
         for (s, (s_re, s_im)) in solution
@@ -1517,7 +1517,7 @@ mod test {
         }
 
         // Setup
-        let mut v = test_matrix_complex().t().to_owned();
+        let mut v = test_matrix_complex().t().as_standard_layout().to_owned();
         let v_copy = v.clone();
         let (nx, _) = (v.shape()[0], v.shape()[1]);
         let mut handler: FftHandler<f64> = FftHandler::new(nx);
@@ -1971,10 +1971,11 @@ mod test {
             [7.956, -2.873, -2.13, 0.006, -8.988, 2.56],
         ]
         .t()
+        .as_standard_layout()
         .to_owned();
 
         // Setup
-        let mut v = test_matrix().t().to_owned();
+        let mut v = test_matrix().t().as_standard_layout().to_owned();
         let (_, ny) = (v.shape()[0], v.shape()[1]);
         let mut handler: DctHandler<f64> = DctHandler::new(ny);
 
