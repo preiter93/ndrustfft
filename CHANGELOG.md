@@ -6,7 +6,7 @@ Released
 
 Bugfix
 -------
-- Fixed bug in inplace parallel transform
+- Fixed bug in inplace parallel transform (See https://github.com/preiter93/ndrustfft/issues/25)
 
 0.6.1 - 27 Dec 2025
 ===================
