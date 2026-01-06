@@ -1,9 +1,18 @@
 Released
 --------
 
+0.6.2 - 06 Jan 2025
+===================
+
+Bugfix
+-------
+- Fixed bug in inplace parallel transform
+
 0.6.1 - 27 Dec 2025
 ===================
 
+Feature
+-------
 - Add inplace variants for ndfft
 - Add inplace variants for ndct
 

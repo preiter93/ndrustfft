@@ -2012,6 +2012,7 @@ mod test {
 
     #[cfg(feature = "parallel")]
     #[test]
+    // See: https://github.com/preiter93/ndrustfft/issues/25
     fn test_dct2_3d_inplace_par_vs_serial_axis0() {
         use ndarray::Array3;
 
