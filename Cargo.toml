@@ -21,7 +21,7 @@ rustdct = "0.7"
 realfft = "3"
 
 [dev-dependencies]
-criterion = { version = "0.8.1", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [[bench]]
 name = "ndrustfft"
